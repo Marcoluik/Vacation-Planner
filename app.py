@@ -14,8 +14,7 @@ import altair as alt
 st.set_page_config(layout="wide")
 
 # Constants
-#OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]  # Move to .streamlit/secrets.toml
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 EVENT_TYPES = ["Vacation", "Sick", "Child Sick", "Training"]
 DEFAULT_CALENDAR_OPTIONS = {
