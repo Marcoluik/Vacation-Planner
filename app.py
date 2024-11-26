@@ -9,10 +9,13 @@ from typing import List, Dict, Tuple, Optional
 import altair as alt
 import firebase_admin
 from firebase_admin import credentials, db
+import json
 
 # FIREBASE CONFIG
+# FIREBASE CONFIG
 fire_key = st.secrets['FIREBASE_KEY']
-fire_cred = credentials.Certificate(fire_key)
+# Parse the JSON string from secrets
+fire_cred = credentials.Certificate(json.loads(fire_key))
 
 # Initialize Firebase app only if not already initialized
 if not firebase_admin._apps:
