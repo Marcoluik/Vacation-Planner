@@ -11,9 +11,9 @@ import firebase_admin
 from firebase_admin import credentials, db
 
 # FIREBASE CONFIG
-fire_key = st.secrets['FIREBASE_KEY']
-fire_cred = credentials.Certificate(fire_key)
-firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
+#fire_key = st.secrets['FIREBASE_KEY']
+#fire_cred = credentials.Certificate(fire_key)
+#firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
 
 
 
