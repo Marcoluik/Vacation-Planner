@@ -455,6 +455,7 @@ def create_leave_dashboard(events):
     # Day of Week Chart
     days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     col1, col2, col3 = st.columns(3)
+
     with col1:
         day_chart = base.mark_bar().encode(
             x=alt.X('Day:N', sort=days_order, title='Day of Week'),
@@ -468,6 +469,7 @@ def create_leave_dashboard(events):
         ).properties(
             title='Leave Distribution by Day of Week'
         )
+        st.altair_chart(day_chart, use_container_width=True)
 
     with col2:
         # Category Chart
@@ -482,6 +484,7 @@ def create_leave_dashboard(events):
         ).properties(
             title='Leave Distribution by Category'
         )
+        st.altair_chart(category_chart, use_container_width=True)
 
     # Heatmap
     with col3:
@@ -499,23 +502,17 @@ def create_leave_dashboard(events):
         ).properties(
             title='Leave Heatmap'
         )
+        st.altair_chart(heatmap, use_container_width=True)
 
-    # Combine charts
-    combined_chart = alt.vconcat(
-        day_chart,
-        category_chart,
-        heatmap
-    ).resolve_scale(
-        color=alt.ResolveMode('independent')
-    )
+    # Remove the previous alt.vconcat code
 
     # Add overall metrics
     total_days = df['Count'].sum()
     avg_per_category = df.groupby('Category')['Count'].sum().mean()
     most_common_day = df.groupby('Day')['Count'].sum().idxmax()
 
-    # Return both the chart and metrics
-    return combined_chart, {
+    # Return metrics
+    return None, {
         'total_days': int(total_days),
         'avg_per_category': round(avg_per_category, 1),
         'most_common_day': most_common_day
