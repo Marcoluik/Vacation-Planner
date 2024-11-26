@@ -12,10 +12,16 @@ from firebase_admin import credentials, db
 import json
 
 # FIREBASE CONFIG
-# FIREBASE CONFIG
 fire_key = st.secrets['FIREBASE_KEY']
-# Parse the JSON string from secrets
-fire_cred = credentials.Certificate(json.loads(fire_key))
+# Try parsing the JSON, with error handling
+try:
+    # Try parsing directly
+    fire_cred_dict = json.loads(fire_key)
+except json.JSONDecodeError:
+    # If that fails, try stripping whitespace
+    fire_cred_dict = json.loads(fire_key.strip())
+
+fire_cred = credentials.Certificate(fire_cred_dict)
 
 # Initialize Firebase app only if not already initialized
 if not firebase_admin._apps:
