@@ -14,7 +14,12 @@ import altair as alt
 st.set_page_config(layout="wide")
 
 # Constants
-OPENAI_API_KEY = st.secrets['OPENAI_API_KEY']
+try:
+    API = st.secrets['OPENAI_API_KEY']
+    OPENAI_API_KEY = API
+except KeyError:
+    st.error("OPENAI_API_KEY is missing in the secrets configuration.")
+    st.stop()
 
 EVENT_TYPES = ["Vacation", "Sick", "Child Sick", "Training"]
 DEFAULT_CALENDAR_OPTIONS = {
