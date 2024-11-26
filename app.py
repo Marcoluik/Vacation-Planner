@@ -12,7 +12,7 @@ from firebase_admin import credentials, db
 import json
 
 # FIREBASE CONFIG
-fire_key = st.secrets['FIREBASE_KEY']
+fire_key = st.secrets["FIREBASE_KEY"]
 # Try parsing the JSON, with error handling
 try:
     # Try parsing directly
