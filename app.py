@@ -11,55 +11,6 @@ import firebase_admin
 from firebase_admin import credentials, db
 import json
 
-# FIREBASE CONFIG
-fire_key = st.secrets["FIREBASE_KEY"]
-# Try parsing the JSON, with error handling
-print(repr(fire_key))
-
-# Try to manually identify formatting issues
-try:
-    fire_cred_dict = json.loads(fire_key)
-except json.JSONDecodeError as e:
-    print(f"Error details: {e}")
-    print(f"Problematic line: {fire_key.split('\n')[e.lineno-1]}")
-
-
-try:
-    # Try parsing directly
-    fire_cred_dict = json.loads(fire_key)
-except json.JSONDecodeError:
-    # If that fails, try stripping whitespace
-    fire_cred_dict = json.loads(fire_key.strip())
-
-fire_cred = credentials.Certificate(fire_cred_dict)
-
-# Initialize Firebase app only if not already initialized
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(fire_cred, {
-        'databaseURL': 'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'
-    })
-
-# Page configuration
-st.set_page_config(layout="wide")
-
-# Constants
-try:
-    API = st.secrets['OPENAI_API_KEY']
-    OPENAI_API_KEY = API
-except KeyError:
-    st.error("OPENAI_API_KEY is missing in the secrets configuration.")
-    st.stop()
-# Page configuration
-st.set_page_config(layout="wide")
-
-# Constants
-try:
-    API = st.secrets['OPENAI_API_KEY']
-    OPENAI_API_KEY = API
-except KeyError:
-    st.error("OPENAI_API_KEY is missing in the secrets configuration.")
-    st.stop()
-
 EVENT_TYPES = ["Vacation", "Sick", "Child Sick", "Training"]
 DEFAULT_CALENDAR_OPTIONS = {
     "editable": True,
@@ -68,9 +19,9 @@ DEFAULT_CALENDAR_OPTIONS = {
 }
 
 # Database initialization
-#db = TinyDB("ferie_db.json")
-#events_table = db.table('events')
-#User = Query()
+db = TinyDB("ferie_db.json")
+events_table = db.table('events')
+User = Query()
 
 
 class ColorManager:
