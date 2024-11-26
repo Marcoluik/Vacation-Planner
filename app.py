@@ -14,6 +14,16 @@ import json
 # FIREBASE CONFIG
 fire_key = st.secrets["FIREBASE_KEY"]
 # Try parsing the JSON, with error handling
+print(repr(fire_key))
+
+# Try to manually identify formatting issues
+try:
+    fire_cred_dict = json.loads(fire_key)
+except json.JSONDecodeError as e:
+    print(f"Error details: {e}")
+    print(f"Problematic line: {fire_key.split('\n')[e.lineno-1]}")
+
+
 try:
     # Try parsing directly
     fire_cred_dict = json.loads(fire_key)
