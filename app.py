@@ -9,7 +9,24 @@ from typing import List, Dict, Tuple, Optional
 import altair as alt
 import firebase_admin
 from firebase_admin import credentials, db
-import json
+
+# FIREBASE CONFIG
+fire_key = st.secrets['FIREBASE_KEY']
+fire_cred = credentials.Certificate(fire_key)
+firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
+
+
+
+# Page configuration
+st.set_page_config(layout="wide")
+
+# Constants
+try:
+    API = st.secrets['OPENAI_API_KEY']
+    OPENAI_API_KEY = API
+except KeyError:
+    st.error("OPENAI_API_KEY is missing in the secrets configuration.")
+    st.stop()
 
 EVENT_TYPES = ["Vacation", "Sick", "Child Sick", "Training"]
 DEFAULT_CALENDAR_OPTIONS = {
@@ -51,19 +68,18 @@ class EventManager:
     def convert_to_fullcalendar(events_data: List[Dict], types: Optional[Dict] = None) -> List[Dict]:
         fullcalendar_events = []
 
-        for key, event in events_data.items():
+        for event in events_data:
             # Get color based on type
             event_type = event.get("type", "Unknown")
             color = ColorManager.get_color_for_type(event_type)
 
-            for event_category in ["vacation", "sick", "child_sick", "training"]:
-                dates = event.get(event_category, [])
+            for event_type in ["vacation", "sick", "child_sick", "training"]:
+                dates = event.get(event_type, [])
                 if not dates:
                     continue
 
-                for date_range in dates:
+                for start, end in dates:
                     try:
-                        start, end = date_range
                         start_date = datetime.strptime(start, '%Y-%m-%d').date()
                         end_date = datetime.strptime(end, '%Y-%m-%d').date()
 
@@ -71,14 +87,14 @@ class EventManager:
                         end_date = end_date + timedelta(days=1)
 
                         fullcalendar_events.append({
-                            "title": f"{event.get('name', 'Unknown')} - {event_category.capitalize()}",
+                            "title": f"{event.get('name', 'Unknown')} - {event_type.capitalize()}",
                             "start": start_date.isoformat(),
                             "end": end_date.isoformat(),
-                            "color": color,
-                            "description": f"{event_category.capitalize()} event for {event.get('name', 'Unknown')}"
+                            "color": color,  # Color now based on type
+                            "description": f"{event_type.capitalize()} event for {event.get('name', 'Unknown')}"
                         })
                     except (ValueError, TypeError) as e:
-                        st.error(f"Error processing dates: {e}")
+                        st.error(f"Error processing dates for {event.get('name', 'Unknown')}: {e}")
 
         return fullcalendar_events
 
@@ -86,7 +102,6 @@ class EventManager:
 class DatabaseManager:
     @staticmethod
     def add_or_update_user(name: str, type: str, **events) -> None:
-        """Add or update a user in Firebase Realtime Database"""
         if not name or not type:
             st.error("Name and type are required!")
             return
@@ -100,48 +115,40 @@ class DatabaseManager:
         # Get color based on type
         color = ColorManager.get_color_for_type(type)
 
-        # Reference to the specific user in the database
-        ref = db.reference(f'users/{name.replace(" ", "_")}')
-
-        # Get existing user data
-        existing_user = ref.get()
-
-        if existing_user:
-            # Merge existing events with new events
-            for event_type, new_events in formatted_events.items():
-                existing_events = existing_user.get(event_type, [])
-                # Combine and remove duplicates
-                merged_events = existing_events + [e for e in new_events if e not in existing_events]
-                formatted_events[event_type] = merged_events
-
-        # Update the database with new data
-        ref.update({
-            "name": name,
-            "type": type,
-            **formatted_events,
-            "color": color
-        })
-        st.success(f"User {name} {'updated' if existing_user else 'added'} successfully.")
+        existing_user = db.search(User.name == name)
+        if not existing_user:
+            db.insert({
+                "name": name,
+                "type": type,
+                **formatted_events,
+                "color": color  # Color is now based on type
+            })
+            st.success(f"User {name} added successfully.")
+        else:
+            # Update existing events while maintaining uniqueness
+            updated_data = {
+                **{k: list(set(existing_user[0].get(k, []) + formatted_events.get(k, [])))
+                   for k in ["vacation", "sick", "child_sick", "training"]},
+                "type": type,
+                "color": color  # Update color based on type
+            }
+            db.update(updated_data, User.name == name)
+            st.success(f"Updated events for {name}")
 
     @staticmethod
     def load_events(selected_user_name: Optional[str] = None,
                     selected_user_type: Optional[str] = None) -> List[Dict]:
-        """Load events from Firebase Realtime Database based on filters."""
+        """Load events from database based on filters."""
         try:
-            # Get a reference to the users
-            ref = db.reference('users')
-            all_users = ref.get() or {}
-
-            # Filter users based on name or type
             if selected_user_name and selected_user_name != "All":
-                filtered_users = {k: v for k, v in all_users.items() if v.get('name') == selected_user_name}
+                user_data = db.search(User.name == selected_user_name)
             elif selected_user_type:
-                filtered_users = {k: v for k, v in all_users.items()
-                                  if v.get('type', '').lower() == selected_user_type.lower()}
+                # Fixed type filtering
+                user_data = [user for user in db.all() if user.get('type', '').lower() == selected_user_type.lower()]
             else:
-                filtered_users = all_users
+                user_data = db.all()
 
-            return EventManager.convert_to_fullcalendar(filtered_users)
+            return EventManager.convert_to_fullcalendar(user_data)
         except Exception as e:
             st.error(f"Error loading events: {e}")
             return []
@@ -266,7 +273,7 @@ class CalendarApp:
         if state.get("eventsSet") is not None:
             st.session_state["events"] = state["eventsSet"]
 
-    def ask_assistant(self, content: str, database: Dict, data: Dict) -> str:
+    def ask_assistant(self, content: str, database: List[Dict], data: Dict) -> str:
         try:
             completion = self.client.chat.completions.create(
                 model="gpt-4",
@@ -370,17 +377,14 @@ class CalendarApp:
             st.subheader("Assistant's Response:")
             st.write(answer)
 
-
 def migrate_database_colors():
     """Update all existing database entries to use type-based colors."""
-    ref = db.reference('users')
-    all_users = ref.get() or {}
-
-    for key, user in all_users.items():
+    all_users = db.all()
+    for user in all_users:
         type_name = user.get("type")
         if type_name:
             color = ColorManager.get_color_for_type(type_name)
-            ref.child(key).update({"color": color})
+            db.update({"color": color}, User.name == user["name"])
 
 
 def calculate_statistics(events):
