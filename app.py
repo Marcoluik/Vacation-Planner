@@ -14,7 +14,7 @@ import altair as alt
 st.set_page_config(layout="wide")
 
 # Constants
-OPENAI_API_KEY = "APIKEYHERE"
+OPENAI_API_KEY = st.secrets("OPENAI_API_KEY")
 
 EVENT_TYPES = ["Vacation", "Sick", "Child Sick", "Training"]
 DEFAULT_CALENDAR_OPTIONS = {
@@ -449,49 +449,51 @@ def create_leave_dashboard(events):
 
     # Day of Week Chart
     days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        day_chart = base.mark_bar().encode(
+            x=alt.X('Day:N', sort=days_order, title='Day of Week'),
+            y=alt.Y('sum(Count):Q', title='Number of Days'),
+            color=alt.Color('Category:N', scale=color_scale),
+            tooltip=[
+                alt.Tooltip('Day:N'),
+                alt.Tooltip('Category:N'),
+                alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
+            ]
+        ).properties(
+            title='Leave Distribution by Day of Week'
+        )
 
-    day_chart = base.mark_bar().encode(
-        x=alt.X('Day:N', sort=days_order, title='Day of Week'),
-        y=alt.Y('sum(Count):Q', title='Number of Days'),
-        color=alt.Color('Category:N', scale=color_scale),
-        tooltip=[
-            alt.Tooltip('Day:N'),
-            alt.Tooltip('Category:N'),
-            alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
-        ]
-    ).properties(
-        title='Leave Distribution by Day of Week'
-    )
-
-    # Category Chart
-    category_chart = base.mark_bar().encode(
-        x=alt.X('Category:N', title='Leave Category'),
-        y=alt.Y('sum(Count):Q', title='Number of Days'),
-        color=alt.Color('Category:N', scale=color_scale),
-        tooltip=[
-            alt.Tooltip('Category:N'),
-            alt.Tooltip('sum(Count):Q', title='Total Days', format='.0f')
-        ]
-    ).properties(
-        title='Leave Distribution by Category'
-    )
+    with col2:
+        # Category Chart
+        category_chart = base.mark_bar().encode(
+            x=alt.X('Category:N', title='Leave Category'),
+            y=alt.Y('sum(Count):Q', title='Number of Days'),
+            color=alt.Color('Category:N', scale=color_scale),
+            tooltip=[
+                alt.Tooltip('Category:N'),
+                alt.Tooltip('sum(Count):Q', title='Total Days', format='.0f')
+            ]
+        ).properties(
+            title='Leave Distribution by Category'
+        )
 
     # Heatmap
-
-    heatmap = base.mark_rect().encode(
-        x=alt.X('Day:N', sort=days_order, title='Day of Week'),
-        y=alt.Y('Category:N', title='Leave Category'),
-        color=alt.Color('sum(Count):Q',
-                        scale=alt.Scale(scheme='viridis'),
-                        title='Number of Days'),
-        tooltip=[
-            alt.Tooltip('Day:N'),
-            alt.Tooltip('Category:N'),
-            alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
-        ]
-    ).properties(
-        title='Leave Heatmap'
-    )
+    with col3:
+        heatmap = base.mark_rect().encode(
+            x=alt.X('Day:N', sort=days_order, title='Day of Week'),
+            y=alt.Y('Category:N', title='Leave Category'),
+            color=alt.Color('sum(Count):Q',
+                            scale=alt.Scale(scheme='viridis'),
+                            title='Number of Days'),
+            tooltip=[
+                alt.Tooltip('Day:N'),
+                alt.Tooltip('Category:N'),
+                alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
+            ]
+        ).properties(
+            title='Leave Heatmap'
+        )
 
     # Combine charts
     combined_chart = alt.vconcat(
