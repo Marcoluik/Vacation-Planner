@@ -9,12 +9,19 @@ from typing import List, Dict, Tuple, Optional
 import altair as alt
 import firebase_admin
 from firebase_admin import credentials, db
+import json
 
 # FIREBASE CONFIG
-#fire_key = st.secrets['FIREBASE_KEY']
-#fire_cred = credentials.Certificate(fire_key)
-#firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
+fire_key = st.secrets['FIREBASE_KEY']
+fire_cred = credentials.Certificate(fire_key)
+firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
 
+ref = db.reference()
+data = ref.get()
+with open('realtime_database_data.json', 'w') as f:
+    json.dump(data, f, indent=4)
+
+print("Realtime Database data saved to realtime_database_data.json")
 
 
 # Page configuration
