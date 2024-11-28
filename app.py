@@ -13,9 +13,23 @@ import json
 
 # FIREBASE CONFIG
 fire_config = st.secrets['FIREBASE_KEY']
-print(fire_config)
-fire_cred = credentials.Certificate(fire_config["apikey"])
-firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
+try:
+    # Try parsing the config if it's a string
+    config_dict = json.loads(fire_config) if isinstance(fire_config, str) else fire_config
+
+    # Create credentials using the entire configuration
+    fire_cred = credentials.Certificate(config_dict)
+
+    # Initialize Firebase app
+    firebase_admin.initialize_app(fire_cred, {'databaseURL': 'https://celerobase.firebaseio.com'})
+
+    # Create database reference
+    ref = db.reference()
+
+except json.JSONDecodeError:
+    print("Invalid JSON configuration")
+except Exception as e:
+    print(f"Error initializing Firebase: {e}")
 
 ref = db.reference()
 data = ref.get()
