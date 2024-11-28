@@ -12,8 +12,9 @@ from firebase_admin import credentials, db
 import json
 
 # FIREBASE CONFIG
-fire_key = st.secrets['FIREBASE_KEY']
-fire_cred = credentials.Certificate(fire_key)
+fire_config = st.secrets['FIREBASE_KEY']
+print(fire_config)
+fire_cred = credentials.Certificate(fire_config["apikey"])
 firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
 
 ref = db.reference()
