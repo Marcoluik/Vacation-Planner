@@ -9,13 +9,8 @@ from typing import List, Dict, Tuple, Optional
 import altair as alt
 import firebase_admin
 from firebase_admin import credentials, db
-
-# FIREBASE CONFIG
-#fire_key = st.secrets['FIREBASE_KEY']
-#fire_cred = credentials.Certificate(fire_key)
-#firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
-
-
+import requests
+import json
 
 # Page configuration
 st.set_page_config(layout="wide")
@@ -40,9 +35,9 @@ db = TinyDB("ferie_db.json")
 events_table = db.table('events')
 User = Query()
 
+JSONBIN_API_KEY = st.secrets['JSONBIN_API_KEY']
 
 class ColorManager:
-    # Predefined colors for types
     TYPE_COLORS = {
         "Person": "#34a853",
         "Hund": "#c19b41",
@@ -53,28 +48,83 @@ class ColorManager:
     @staticmethod
     def get_color_for_type(type_name: str) -> str:
         """Get a consistent color for a given type."""
-        # If type already has a color, return it
         if type_name in ColorManager.TYPE_COLORS:
             return ColorManager.TYPE_COLORS[type_name]
 
-        # If it's a new type, generate a color and store it
-        new_color = "#{:06x}".format(random.randint(0, 0xFFFFFF))
-        ColorManager.TYPE_COLORS[type_name] = new_color
-        return new_color
+        # Generate a random color for new types
+        color = "#{:06x}".format(random.randint(0, 0xFFFFFF))
+        ColorManager.TYPE_COLORS[type_name] = color
+        return color
 
 
-class EventManager:
-    @staticmethod
-    def convert_to_fullcalendar(events_data: List[Dict], types: Optional[Dict] = None) -> List[Dict]:
+class JSONBinManager:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.base_url = "https://api.jsonbin.io/v3"
+        self.headers = {
+            "Content-Type": "application/json",
+            "X-Master-key": self.api_key
+        }
+        self.bin_id = self._get_or_create_bin()
+
+    def _get_or_create_bin(self):
+        """Retrieve or create a JSONBin for storing data."""
+        try:
+            # Check if a bin ID is stored in Streamlit secrets
+            bin_id = st.secrets.get('JSONBIN_BIN_ID')
+
+            if not bin_id:
+                # Create a new bin if no existing ID
+                create_url = f"{self.base_url}/b"
+                initial_data = {"users": []}
+                response = requests.post(
+                    create_url,
+                    json=initial_data,
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                bin_id = response.json()['metadata']['id']
+
+                st.write(f"Created new JSONBin with ID: {bin_id}")
+
+            return bin_id
+        except Exception as e:
+            st.error(f"Error getting/creating bin: {e}")
+            return None
+
+    def get_events(self, selected_user_name=None, selected_user_type=None):
+        """Retrieve events from JSONBin, with optional filtering."""
+        try:
+            response = requests.get(
+                f"{self.base_url}/b/{self.bin_id}",
+                headers=self.headers
+            )
+            response.raise_for_status()
+
+            data = response.json()['record'].get('users', [])
+
+            # Apply filters
+            if selected_user_name and selected_user_name != "All":
+                data = [user for user in data if user.get('name') == selected_user_name]
+            elif selected_user_type:
+                data = [user for user in data if user.get('type', '').lower() == selected_user_type.lower()]
+
+            return self._convert_to_fullcalendar(data)
+
+        except Exception as e:
+            st.error(f"Error retrieving events: {e}")
+            return []
+
+    def _convert_to_fullcalendar(self, events_data):
+        """Convert events to FullCalendar format."""
         fullcalendar_events = []
 
         for event in events_data:
-            # Get color based on type
             event_type = event.get("type", "Unknown")
             color = ColorManager.get_color_for_type(event_type)
 
-            for event_type in ["vacation", "sick", "child_sick", "training"]:
-                dates = event.get(event_type, [])
+            for event_type_key in ["vacation", "sick", "child_sick", "training"]:
+                dates = event.get(event_type_key, [])
                 if not dates:
                     continue
 
@@ -82,80 +132,104 @@ class EventManager:
                     try:
                         start_date = datetime.strptime(start, '%Y-%m-%d').date()
                         end_date = datetime.strptime(end, '%Y-%m-%d').date()
-
-                        # Adjust end date to be inclusive
                         end_date = end_date + timedelta(days=1)
 
                         fullcalendar_events.append({
-                            "title": f"{event.get('name', 'Unknown')} - {event_type.capitalize()}",
+                            "title": f"{event.get('name', 'Unknown')} - {event_type_key.capitalize()}",
                             "start": start_date.isoformat(),
                             "end": end_date.isoformat(),
-                            "color": color,  # Color now based on type
-                            "description": f"{event_type.capitalize()} event for {event.get('name', 'Unknown')}"
+                            "color": color,
+                            "description": f"{event_type_key.capitalize()} event for {event.get('name', 'Unknown')}"
                         })
                     except (ValueError, TypeError) as e:
-                        st.error(f"Error processing dates for {event.get('name', 'Unknown')}: {e}")
+                        st.error(f"Error processing dates: {e}")
 
         return fullcalendar_events
 
-
-class DatabaseManager:
-    @staticmethod
-    def add_or_update_user(name: str, type: str, **events) -> None:
-        if not name or not type:
-            st.error("Name and type are required!")
-            return
-
-        # Convert dates to ISO format strings
-        formatted_events = {
-            k: [(s.isoformat(), e.isoformat()) for s, e in v] if v else []
-            for k, v in events.items()
-        }
-
-        # Get color based on type
-        color = ColorManager.get_color_for_type(type)
-
-        existing_user = db.search(User.name == name)
-        if not existing_user:
-            db.insert({
-                "name": name,
-                "type": type,
-                **formatted_events,
-                "color": color  # Color is now based on type
-            })
-            st.success(f"User {name} added successfully.")
-        else:
-            # Update existing events while maintaining uniqueness
-            updated_data = {
-                **{k: list(set(existing_user[0].get(k, []) + formatted_events.get(k, [])))
-                   for k in ["vacation", "sick", "child_sick", "training"]},
-                "type": type,
-                "color": color  # Update color based on type
-            }
-            db.update(updated_data, User.name == name)
-            st.success(f"Updated events for {name}")
-
-    @staticmethod
-    def load_events(selected_user_name: Optional[str] = None,
-                    selected_user_type: Optional[str] = None) -> List[Dict]:
-        """Load events from database based on filters."""
+    def add_or_update_user(self, name, type, **events):
+        """Add or update a user in JSONBin."""
         try:
-            if selected_user_name and selected_user_name != "All":
-                user_data = db.search(User.name == selected_user_name)
-            elif selected_user_type:
-                # Fixed type filtering
-                user_data = [user for user in db.all() if user.get('type', '').lower() == selected_user_type.lower()]
-            else:
-                user_data = db.all()
+            # Fetch current data
+            response = requests.get(
+                f"{self.base_url}/b/{self.bin_id}",
+                headers=self.headers
+            )
+            response.raise_for_status()
+            current_data = response.json()['record']
 
-            return EventManager.convert_to_fullcalendar(user_data)
+            # Convert dates to ISO format
+            formatted_events = {
+                k: [(s.isoformat(), e.isoformat()) for s, e in v] if v else []
+                for k, v in events.items()
+            }
+
+            # Generate color
+            color = ColorManager.get_color_for_type(type)
+
+            # Check if user exists and update
+            users = current_data.get('users', [])
+            existing_user_index = next(
+                (index for index, user in enumerate(users)
+                 if user.get('name') == name),
+                None
+            )
+
+            if existing_user_index is not None:
+                # Update existing user
+                users[existing_user_index].update({
+                    "type": type,
+                    "color": color,
+                    **formatted_events
+                })
+            else:
+                # Add new user
+                users.append({
+                    "name": name,
+                    "type": type,
+                    "color": color,
+                    **formatted_events
+                })
+
+            # Update data in JSONBin
+            updated_data = {"users": users}
+            response = requests.put(
+                f"{self.base_url}/b/{self.bin_id}",
+                json=updated_data,
+                headers=self.headers
+            )
+            response.raise_for_status()
+
+            st.success(f"User {name} added/updated successfully.")
+            return users
+
         except Exception as e:
-            st.error(f"Error loading events: {e}")
-            return []
+            st.error(f"Error updating JSONBin: {e}")
+            return None
+
+    def get_unique_names_and_types(self):
+        """Retrieve unique names and types from JSONBin."""
+        try:
+            response = requests.get(
+                f"{self.base_url}/b/{self.bin_id}",
+                headers=self.headers
+            )
+            response.raise_for_status()
+
+            users = response.json()['record'].get('users', [])
+
+            names = list(set(user.get('name') for user in users if user.get('name'))) + ["All"]
+            types = list(set(user.get('type') for user in users if user.get('type')))
+
+            return names, types
+
+        except Exception as e:
+            st.error(f"Error retrieving names and types: {e}")
+            return [], []
 
 
 class CalendarApp:
     def __init__(self):
+        self.jsonbin_manager = JSONBinManager(JSONBIN_API_KEY)
         self.client = OpenAI(api_key=OPENAI_API_KEY)
         self.calendar_modes = {
             "daygrid": {
@@ -232,8 +306,7 @@ class CalendarApp:
         }
 
 
-    def display_calendar(self, user_override: Optional[str] = None,
-                         mode: bool = True, types: Optional[str] = None) -> None:
+    def display_calendar(self, user_override=None, mode=True, types=None):
         """Display the calendar with filtered events."""
         if mode:
             mode = st.selectbox("Calendar Mode:",
@@ -241,9 +314,9 @@ class CalendarApp:
 
         # Handle user selection
         if not types:
+            names, _ = self.jsonbin_manager.get_unique_names_and_types()
             selected_user = (user_override if user_override else
-                             st.sidebar.selectbox("Select User",
-                                                  [None] + [user["name"] for user in db.all()]))
+                             st.sidebar.selectbox("Select User", names))
         else:
             selected_user = None
 
@@ -256,9 +329,9 @@ class CalendarApp:
 
         if events_need_update:
             if types:
-                events = DatabaseManager.load_events(selected_user_type=types)
+                events = self.jsonbin_manager.get_events(selected_user_type=types)
             else:
-                events = DatabaseManager.load_events(selected_user_name=selected_user)
+                events = self.jsonbin_manager.get_events(selected_user_name=selected_user)
 
             st.session_state.events = events
             st.session_state.selected_user = selected_user
@@ -320,15 +393,14 @@ class CalendarApp:
 
             if st.form_submit_button("Add/Update User"):
                 event_type = off_type.lower().replace(" ", "_")
-                DatabaseManager.add_or_update_user(
+                self.jsonbin_manager.add_or_update_user(
                     name, user_type, **{event_type: [(start, end)]}
                 )
 
     def login_page(self):
         """Handle login page display and functionality."""
         # Get unique names and types
-        names = [item.get('name') for item in db.all() if item.get('name')] + ["All"]
-        types = list(set(item.get('type') for item in db.all() if item.get('type')))
+        names, types = self.jsonbin_manager.get_unique_names_and_types()
 
         switch = st.radio("Select by:", ["Name", "Type"])
         view_mode = st.radio("View Mode:", ["Calendar", "Statistics"])
@@ -339,13 +411,13 @@ class CalendarApp:
         if switch == "Name":
             chosen = st.selectbox("Select a name:", names)
             if chosen == "All":
-                events = DatabaseManager.load_events()
+                events = self.jsonbin_manager.get_events()
             elif chosen:
-                events = DatabaseManager.load_events(selected_user_name=chosen)
+                events = self.jsonbin_manager.get_events(selected_user_name=chosen)
         else:
             chosen_type = st.selectbox("Select a type:", types)
             if chosen_type:
-                events = DatabaseManager.load_events(selected_user_type=chosen_type)
+                events = self.jsonbin_manager.get_events(selected_user_type=chosen_type)
 
         if view_mode == "Calendar":
             if chosen == "All":
@@ -358,24 +430,10 @@ class CalendarApp:
             if events:
                 display_statistics(events)
 
-        # Debug information and AI Assistant section
-        if st.checkbox("Show Debug Info"):
-            st.write("Current Selection:")
-            st.write({
-                "Chosen Name": chosen,
-                "Chosen Type": chosen_type,
-                "Number of Events": len(events) if events else 0,
-                "Database Records": len(db.all())
-            })
-
         # AI Assistant section
         question = st.text_input("Ask the assistant about the leave patterns:")
         if question:
-            dball = db.all()
-            current_data = chosen if chosen and chosen != "All" else dball
-            answer = self.ask_assistant(question, dball, current_data)
-            st.subheader("Assistant's Response:")
-            st.write(answer)
+            pass  # Implement AI assistant logic if needed
 
 def migrate_database_colors():
     """Update all existing database entries to use type-based colors."""
@@ -546,7 +604,6 @@ def display_statistics(events):
             st.altair_chart(chart, use_container_width=True)
     else:
         st.warning("No events data available for visualization")
-
 
 # Add this to your main() function or where you initialize the app
 if __name__ == "__main__":
