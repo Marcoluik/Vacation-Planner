@@ -385,15 +385,15 @@ class CalendarApp:
             st.subheader("Assistant's Response:")
             st.write(answer)
 
-"""
 def migrate_database_colors():
+    """Update all existing database entries to use type-based colors."""
     all_users = db.all()
     for user in all_users:
         type_name = user.get("type")
         if type_name:
             color = ColorManager.get_color_for_type(type_name)
             db.update({"color": color}, User.name == user["name"])
-"""
+
 
 def calculate_statistics(events):
     """Calculate statistics from events data with enhanced output for Altair."""
