@@ -127,11 +127,19 @@ class DatabaseManager:
         else:
             # Update existing events while maintaining uniqueness
             updated_data = {
-                **{k: list(set(existing_user[0].get(k, []) + formatted_events.get(k, [])))
-                   for k in ["vacation", "sick", "child_sick", "training"]},
+                **{
+                    k: list(
+                        set(
+                            tuple(item) if isinstance(item, list) else item
+                            for item in (existing_user[0].get(k, []) + formatted_events.get(k, []))
+                        )
+                    )
+                    for k in ["vacation", "sick", "child_sick", "training"]
+                },
                 "type": type,
-                "color": color  # Update color based on type
+                "color": color,  # Update color based on type
             }
+
             db.update(updated_data, User.name == name)
             st.success(f"Updated events for {name}")
 
