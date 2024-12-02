@@ -63,9 +63,91 @@ class ColorManager:
         return new_color
 
 
+class FirebaseDatabaseManager:
+    @staticmethod
+    def add_or_update_user(name: str, type: str, **events) -> None:
+        """Add or update user in Firebase Realtime Database."""
+        if not name or not type:
+            st.error("Name and type are required!")
+            return
+
+        # Convert dates to ISO format strings
+        formatted_events = {
+            k: [(s.isoformat(), e.isoformat()) for s, e in v] if v else []
+            for k, v in events.items()
+        }
+
+        # Get color based on type
+        color = ColorManager.get_color_for_type(type)
+
+        try:
+            # Reference to users in Firebase
+            users_ref = db.reference('users')
+
+            # Check if user already exists
+            existing_users = users_ref.order_by_child('name').equal_to(name).get()
+
+            if not existing_users:
+                # Create new user with a unique key
+                new_user_ref = users_ref.push({
+                    "name": name,
+                    "type": type,
+                    **formatted_events,
+                    "color": color
+                })
+                st.success(f"User {name} added successfully.")
+            else:
+                # Update existing user
+                user_key = list(existing_users.keys())[0]
+                user_ref = users_ref.child(user_key)
+
+                # Merge existing and new events
+                current_data = user_ref.get() or {}
+                updated_data = {
+                    **current_data,
+                    "type": type,
+                    "color": color,
+                    **{k: list(set(current_data.get(k, []) + formatted_events.get(k, [])))
+                       for k in ["vacation", "sick", "child_sick", "training"]}
+                }
+
+                user_ref.update(updated_data)
+                st.success(f"Updated events for {name}")
+        except Exception as e:
+            st.error(f"Error adding/updating user: {e}")
+
+    @staticmethod
+    def load_events(selected_user_name: Optional[str] = None,
+                    selected_user_type: Optional[str] = None) -> List[Dict]:
+        """Load events from Firebase based on filters."""
+        try:
+            users_ref = db.reference('users')
+
+            # Fetch all users initially
+            all_users = users_ref.get() or {}
+
+            # Filter users based on name or type
+            filtered_users = []
+            for user_key, user_data in all_users.items():
+                if selected_user_name and selected_user_name != "All":
+                    if user_data.get('name') == selected_user_name:
+                        filtered_users.append(user_data)
+                elif selected_user_type:
+                    if user_data.get('type', '').lower() == selected_user_type.lower():
+                        filtered_users.append(user_data)
+                else:
+                    filtered_users.append(user_data)
+
+            # Convert to FullCalendar format
+            return EventManager.convert_to_fullcalendar(filtered_users)
+
+        except Exception as e:
+            st.error(f"Error loading events: {e}")
+            return []
+
 class EventManager:
     @staticmethod
-    def convert_to_fullcalendar(events_data: List[Dict], types: Optional[Dict] = None) -> List[Dict]:
+    def convert_to_fullcalendar(events_data: List[Dict]) -> List[Dict]:
         fullcalendar_events = []
 
         for event in events_data:
@@ -90,69 +172,13 @@ class EventManager:
                             "title": f"{event.get('name', 'Unknown')} - {event_type.capitalize()}",
                             "start": start_date.isoformat(),
                             "end": end_date.isoformat(),
-                            "color": color,  # Color now based on type
+                            "color": color,
                             "description": f"{event_type.capitalize()} event for {event.get('name', 'Unknown')}"
                         })
                     except (ValueError, TypeError) as e:
                         st.error(f"Error processing dates for {event.get('name', 'Unknown')}: {e}")
 
         return fullcalendar_events
-
-
-class DatabaseManager:
-    @staticmethod
-    def add_or_update_user(name: str, type: str, **events) -> None:
-        if not name or not type:
-            st.error("Name and type are required!")
-            return
-
-        # Convert dates to ISO format strings
-        formatted_events = {
-            k: [(s.isoformat(), e.isoformat()) for s, e in v] if v else []
-            for k, v in events.items()
-        }
-
-        # Get color based on type
-        color = ColorManager.get_color_for_type(type)
-
-        existing_user = db.search(User.name == name)
-        if not existing_user:
-            db.insert({
-                "name": name,
-                "type": type,
-                **formatted_events,
-                "color": color  # Color is now based on type
-            })
-            st.success(f"User {name} added successfully.")
-        else:
-            # Update existing events while maintaining uniqueness
-            updated_data = {
-                **{k: list(set(existing_user[0].get(k, []) + formatted_events.get(k, [])))
-                   for k in ["vacation", "sick", "child_sick", "training"]},
-                "type": type,
-                "color": color  # Update color based on type
-            }
-            db.update(updated_data, User.name == name)
-            st.success(f"Updated events for {name}")
-
-    @staticmethod
-    def load_events(selected_user_name: Optional[str] = None,
-                    selected_user_type: Optional[str] = None) -> List[Dict]:
-        """Load events from database based on filters."""
-        try:
-            if selected_user_name and selected_user_name != "All":
-                user_data = db.search(User.name == selected_user_name)
-            elif selected_user_type:
-                # Fixed type filtering
-                user_data = [user for user in db.all() if user.get('type', '').lower() == selected_user_type.lower()]
-            else:
-                user_data = db.all()
-
-            return EventManager.convert_to_fullcalendar(user_data)
-        except Exception as e:
-            st.error(f"Error loading events: {e}")
-            return []
-
 
 class CalendarApp:
     def __init__(self):
@@ -231,7 +257,6 @@ class CalendarApp:
             }
         }
 
-
     def display_calendar(self, user_override: Optional[str] = None,
                          mode: bool = True, types: Optional[str] = None) -> None:
         """Display the calendar with filtered events."""
@@ -240,10 +265,13 @@ class CalendarApp:
                                 ["daygrid", "timegrid", "timeline", "list", "multimonth"])
 
         # Handle user selection
+        users_ref = db.reference('users')
+        all_users = users_ref.get() or {}
+
         if not types:
+            user_names = [None] + list(set(user['name'] for user in all_users.values() if 'name' in user))
             selected_user = (user_override if user_override else
-                             st.sidebar.selectbox("Select User",
-                                                  [None] + [user["name"] for user in db.all()]))
+                             st.sidebar.selectbox("Select User", user_names))
         else:
             selected_user = None
 
@@ -256,15 +284,15 @@ class CalendarApp:
 
         if events_need_update:
             if types:
-                events = DatabaseManager.load_events(selected_user_type=types)
+                events = FirebaseDatabaseManager.load_events(selected_user_type=types)
             else:
-                events = DatabaseManager.load_events(selected_user_name=selected_user)
+                events = FirebaseDatabaseManager.load_events(selected_user_name=selected_user)
 
             st.session_state.events = events
             st.session_state.selected_user = selected_user
             st.session_state.selected_type = types
 
-        # Display calendar
+        # Display calendar (rest remains the same)
         state = calendar(
             events=st.session_state.events,
             options=DEFAULT_CALENDAR_OPTIONS
@@ -273,7 +301,7 @@ class CalendarApp:
         if state.get("eventsSet") is not None:
             st.session_state["events"] = state["eventsSet"]
 
-    def ask_assistant(self, content: str, database: List[Dict], data: Dict) -> str:
+    def ask_assistant(self, content: str, database: Dict, data: Dict) -> str:
         try:
             completion = self.client.chat.completions.create(
                 model="gpt-4",
@@ -320,15 +348,19 @@ class CalendarApp:
 
             if st.form_submit_button("Add/Update User"):
                 event_type = off_type.lower().replace(" ", "_")
-                DatabaseManager.add_or_update_user(
+                FirebaseDatabaseManager.add_or_update_user(
                     name, user_type, **{event_type: [(start, end)]}
                 )
 
     def login_page(self):
         """Handle login page display and functionality."""
+        # Get users from Firebase
+        users_ref = db.reference('users')
+        all_users = users_ref.get() or {}
+
         # Get unique names and types
-        names = [item.get('name') for item in db.all() if item.get('name')] + ["All"]
-        types = list(set(item.get('type') for item in db.all() if item.get('type')))
+        names = [item.get('name') for item in all_users.values() if item.get('name')] + ["All"]
+        types = list(set(item.get('type') for item in all_users.values() if item.get('type')))
 
         switch = st.radio("Select by:", ["Name", "Type"])
         view_mode = st.radio("View Mode:", ["Calendar", "Statistics"])
@@ -339,13 +371,13 @@ class CalendarApp:
         if switch == "Name":
             chosen = st.selectbox("Select a name:", names)
             if chosen == "All":
-                events = DatabaseManager.load_events()
+                events = FirebaseDatabaseManager.load_events()
             elif chosen:
-                events = DatabaseManager.load_events(selected_user_name=chosen)
+                events = FirebaseDatabaseManager.load_events(selected_user_name=chosen)
         else:
             chosen_type = st.selectbox("Select a type:", types)
             if chosen_type:
-                events = DatabaseManager.load_events(selected_user_type=chosen_type)
+                events = FirebaseDatabaseManager.load_events(selected_user_type=chosen_type)
 
         if view_mode == "Calendar":
             if chosen == "All":
@@ -357,25 +389,6 @@ class CalendarApp:
         else:  # Statistics view
             if events:
                 display_statistics(events)
-
-        # Debug information and AI Assistant section
-        if st.checkbox("Show Debug Info"):
-            st.write("Current Selection:")
-            st.write({
-                "Chosen Name": chosen,
-                "Chosen Type": chosen_type,
-                "Number of Events": len(events) if events else 0,
-                "Database Records": len(db.all())
-            })
-
-        # AI Assistant section
-        question = st.text_input("Ask the assistant about the leave patterns:")
-        if question:
-            dball = db.all()
-            current_data = chosen if chosen and chosen != "All" else dball
-            answer = self.ask_assistant(question, dball, current_data)
-            st.subheader("Assistant's Response:")
-            st.write(answer)
 
 def migrate_database_colors():
     """Update all existing database entries to use type-based colors."""
