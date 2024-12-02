@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from tinydb import TinyDB, Query
 from openai import OpenAI
 from streamlit_calendar import calendar
 import random
@@ -9,13 +8,8 @@ from typing import List, Dict, Tuple, Optional
 import altair as alt
 import firebase_admin
 from firebase_admin import credentials, db
-
-# FIREBASE CONFIG
-#fire_key = st.secrets['FIREBASE_KEY']
-#fire_cred = credentials.Certificate(fire_key)
-#firebase_admin.initialize_app(fire_cred, {'databaseURL':'https://celerobase-default-rtdb.europe-west1.firebasedatabase.app/'})
-
-
+import json
+import os
 
 # Page configuration
 st.set_page_config(layout="wide")
@@ -28,7 +22,44 @@ except KeyError:
     st.error("OPENAI_API_KEY is missing in the secrets configuration.")
     st.stop()
 
-EVENT_TYPES = ["Vacation", "Sick", "Child Sick", "Training"]
+
+def initialize_firebase():
+    """Initialize Firebase app if not already initialized."""
+    if not firebase_admin._apps:
+        try:
+            # Try to load Firebase credentials from Streamlit secrets
+            fire_key_json = st.secrets['FIREBASE_KEY']
+
+            temp = json.loads(fire_key_json, strict=False)
+            # Initialize Firebase with the temporary credentials file
+            cred = credentials.Certificate(temp)
+
+            firebase_admin.initialize_app(cred, {
+                'databaseURL': st.secrets['FIREBASE_DATABASE_URL']
+            })
+
+            # Remove the temporary file
+            os.remove('firebase_temp_key.json')
+
+            response = requests.get(f"{database_url}?auth={auth_token}")
+
+            if response.status_code == 200:
+                # Save the database content to a file
+                with open('firebase_database.json', 'w') as json_file:
+                    json.dump(response.json(), json_file, indent=4)
+                print("Database downloaded successfully!")
+            else:
+                print(f"Failed to download database: {response.status_code}, {response.text}")
+
+        except Exception as e:
+            st.error(f"Firebase initialization error: {e}")
+            st.stop()
+
+initialize_firebase()
+
+
+
+EVENT_TYPES = ["Vacation", "Sick", "Child Sic k", "Training"]
 DEFAULT_CALENDAR_OPTIONS = {
     "editable": True,
     "navLinks": True,
@@ -36,9 +67,9 @@ DEFAULT_CALENDAR_OPTIONS = {
 }
 
 # Database initialization
-db = TinyDB("ferie_db.json")
-events_table = db.table('events')
-User = Query()
+#db = TinyDB("ferie_db.json")
+#events_table = db.table('events')
+#User = Query()
 
 
 class ColorManager:
@@ -62,7 +93,6 @@ class ColorManager:
         ColorManager.TYPE_COLORS[type_name] = new_color
         return new_color
 
-
 class FirebaseDatabaseManager:
     @staticmethod
     def add_or_update_user(name: str, type: str, **events) -> None:
@@ -85,7 +115,8 @@ class FirebaseDatabaseManager:
             users_ref = db.reference('users')
 
             # Check if user already exists
-            existing_users = users_ref.order_by_child('name').equal_to(name).get()
+            query = users_ref.order_by_child('name').equal_to(name)
+            existing_users = query.get()
 
             if not existing_users:
                 # Create new user with a unique key
@@ -138,12 +169,9 @@ class FirebaseDatabaseManager:
                 else:
                     filtered_users.append(user_data)
 
-            # Convert to FullCalendar format
             return EventManager.convert_to_fullcalendar(filtered_users)
-
         except Exception as e:
             st.error(f"Error loading events: {e}")
-            return []
 
 class EventManager:
     @staticmethod
@@ -261,10 +289,10 @@ class CalendarApp:
                          mode: bool = True, types: Optional[str] = None) -> None:
         """Display the calendar with filtered events."""
         if mode:
-            mode = st.selectbox("Calendar Mode:",
-                                ["daygrid", "timegrid", "timeline", "list", "multimonth"])
+            mode_selection = st.selectbox("Calendar Mode:",
+                                          ["daygrid", "timegrid", "timeline", "list", "multimonth"])
 
-        # Handle user selection
+        # Fetch user names from Firebase
         users_ref = db.reference('users')
         all_users = users_ref.get() or {}
 
@@ -292,7 +320,7 @@ class CalendarApp:
             st.session_state.selected_user = selected_user
             st.session_state.selected_type = types
 
-        # Display calendar (rest remains the same)
+        # Display calendar
         state = calendar(
             events=st.session_state.events,
             options=DEFAULT_CALENDAR_OPTIONS
@@ -389,16 +417,15 @@ class CalendarApp:
         else:  # Statistics view
             if events:
                 display_statistics(events)
-
+"""
 def migrate_database_colors():
-    """Update all existing database entries to use type-based colors."""
     all_users = db.all()
     for user in all_users:
         type_name = user.get("type")
         if type_name:
             color = ColorManager.get_color_for_type(type_name)
             db.update({"color": color}, User.name == user["name"])
-
+"""
 
 def calculate_statistics(events):
     """Calculate statistics from events data with enhanced output for Altair."""
@@ -564,6 +591,6 @@ def display_statistics(events):
 # Add this to your main() function or where you initialize the app
 if __name__ == "__main__":
     # Migrate existing database entries to use type-based colors
-    migrate_database_colors()
+    #migrate_database_colors()
     app = CalendarApp()
     app.main()
