@@ -28,7 +28,7 @@ except KeyError:
     st.error("OPENAI_API_KEY is missing in the secrets configuration.")
     st.stop()
 
-EVENT_TYPES = ["Vacation", "Sick", "Child Sick", "Training"]
+EVENT_TYPES = ["Ferie", "Sygdom", "Barnsygdom", "Kursus"]
 DEFAULT_CALENDAR_OPTIONS = {
     "editable": True,
     "navLinks": True,
@@ -75,7 +75,7 @@ class EventManager:
             event_type = event.get("type", "Unknown")
             color = ColorManager.get_color_for_type(event_type)
 
-            for event_type in ["vacation", "sick", "child_sick", "training"]:
+            for event_type in ["Ferie", "Sygdom", "Barnsygdom", "Kursus"]:
                 dates = event.get(event_type, [])
                 if not dates:
                     continue
@@ -136,7 +136,7 @@ class DatabaseManager:
                             for item in (existing_user[0].get(k, []) + formatted_events.get(k, []))
                         )
                     )
-                    for k in ["vacation", "sick", "child_sick", "training"]
+                    for k in ["Ferie", "Sygdom", "Barnsygdom", "Kursus"]
                 },
                 "type": type,
                 "color": color,  # Update color based on type
@@ -330,7 +330,7 @@ class CalendarApp:
             off_type = st.selectbox("Type fravær", EVENT_TYPES, index=0)
 
             if st.form_submit_button("Tilføj"):
-                event_type = off_type.lower().replace(" ", "_")
+                event_type = off_type
                 DatabaseManager.add_or_update_user(
                     name, user_type, **{event_type: [(start, end)]}
                 )
