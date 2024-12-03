@@ -44,10 +44,12 @@ User = Query()
 class ColorManager:
     # Predefined colors for types
     TYPE_COLORS = {
-        "Person": "#34a853",
-        "Hund": "#c19b41",
-        "Abe": "#f045c1",
-        "Tømrer": "#971a5b"
+        "Bygningskonstruktør": "#34a853",
+        "Admin": "#c19b41",
+        "Tømrer": "#f045c1",
+        "Formand": "#971a5b",
+        "Nedriver": "#d9d9d9",
+        "Kørsel/service": "#ff0000",
     }
 
     @staticmethod
@@ -244,13 +246,13 @@ class CalendarApp:
                          mode: bool = True, types: Optional[str] = None) -> None:
         """Display the calendar with filtered events."""
         if mode:
-            mode = st.selectbox("Calendar Mode:",
+            mode = st.selectbox("Kalender Mode:",
                                 ["daygrid", "timegrid", "timeline", "list", "multimonth"])
 
         # Handle user selection
         if not types:
             selected_user = (user_override if user_override else
-                             st.sidebar.selectbox("Select User",
+                             st.sidebar.selectbox("Vælg bruger",
                                                   [None] + [user["name"] for user in db.all()]))
         else:
             selected_user = None
@@ -318,15 +320,15 @@ class CalendarApp:
             self.login_page()
 
     def setup_sidebar(self):
-        st.sidebar.header("User Management")
+        st.sidebar.header("Brugerdata")
         with st.sidebar.form(key="add_user_form"):
-            name = st.text_input("Name")
-            user_type = st.text_input("Type")
+            name = st.text_input("Navn")
+            user_type = st.text_input("Brugertype")
             start = st.date_input("Start")
-            end = st.date_input("End")
-            off_type = st.selectbox("Absence Type", EVENT_TYPES, index=0)
+            end = st.date_input("Slut")
+            off_type = st.selectbox("Type fravær", EVENT_TYPES, index=0)
 
-            if st.form_submit_button("Add/Update User"):
+            if st.form_submit_button("Tilføj"):
                 event_type = off_type.lower().replace(" ", "_")
                 DatabaseManager.add_or_update_user(
                     name, user_type, **{event_type: [(start, end)]}
@@ -338,20 +340,20 @@ class CalendarApp:
         names = [item.get('name') for item in db.all() if item.get('name')] + ["All"]
         types = list(set(item.get('type') for item in db.all() if item.get('type')))
 
-        switch = st.radio("Select by:", ["Name", "Type"])
-        view_mode = st.radio("View Mode:", ["Calendar", "Statistics"])
+        switch = st.radio("Sorter efter:", ["Name", "Type"])
+        view_mode = st.radio("Vis data:", ["Calendar", "Statistics"])
 
         chosen = None
         chosen_type = None
 
-        if switch == "Name":
-            chosen = st.selectbox("Select a name:", names)
+        if switch == "Navn":
+            chosen = st.selectbox("Vælg navn:", names)
             if chosen == "All":
                 events = DatabaseManager.load_events()
             elif chosen:
                 events = DatabaseManager.load_events(selected_user_name=chosen)
         else:
-            chosen_type = st.selectbox("Select a type:", types)
+            chosen_type = st.selectbox("Vælg type:", types)
             if chosen_type:
                 events = DatabaseManager.load_events(selected_user_type=chosen_type)
 
@@ -367,8 +369,8 @@ class CalendarApp:
                 display_statistics(events)
 
         # Debug information and AI Assistant section
-        if st.checkbox("Show Debug Info"):
-            st.write("Current Selection:")
+        if st.checkbox("-$-"):
+            st.write("Valgt:")
             st.write({
                 "Chosen Name": chosen,
                 "Chosen Type": chosen_type,
@@ -377,7 +379,7 @@ class CalendarApp:
             })
 
         # AI Assistant section
-        question = st.text_input("Ask the assistant about the leave patterns:")
+        question = st.text_input("Sprøg Kunsitg inteligens:")
         if question:
             dball = db.all()
             current_data = chosen if chosen and chosen != "All" else dball
@@ -473,8 +475,8 @@ def create_leave_dashboard(events):
 
     with col1:
         day_chart = base.mark_bar().encode(
-            x=alt.X('Day:N', sort=days_order, title='Day of Week'),
-            y=alt.Y('sum(Count):Q', title='Number of Days'),
+            x=alt.X('Day:N', sort=days_order, title='Ugedag'),
+            y=alt.Y('sum(Count):Q', title='Antal dage'),
             color=alt.Color('Category:N', scale=color_scale),
             tooltip=[
                 alt.Tooltip('Day:N'),
@@ -482,40 +484,40 @@ def create_leave_dashboard(events):
                 alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
             ]
         ).properties(
-            title='Leave Distribution by Day of Week'
+            title='Daglig graf'
         )
         st.altair_chart(day_chart, use_container_width=True)
 
     with col2:
         # Category Chart
         category_chart = base.mark_bar().encode(
-            x=alt.X('Category:N', title='Leave Category'),
-            y=alt.Y('sum(Count):Q', title='Number of Days'),
+            x=alt.X('Category:N', title='Kategori'),
+            y=alt.Y('sum(Count):Q', title='Antal dage'),
             color=alt.Color('Category:N', scale=color_scale),
             tooltip=[
                 alt.Tooltip('Category:N'),
                 alt.Tooltip('sum(Count):Q', title='Total Days', format='.0f')
             ]
         ).properties(
-            title='Leave Distribution by Category'
+            title='Fraværs type graf'
         )
         st.altair_chart(category_chart, use_container_width=True)
 
     # Heatmap
     with col3:
         heatmap = base.mark_rect().encode(
-            x=alt.X('Day:N', sort=days_order, title='Day of Week'),
-            y=alt.Y('Category:N', title='Leave Category'),
+            x=alt.X('Day:N', sort=days_order, title='Ugedag'),
+            y=alt.Y('Category:N', title='Kategori'),
             color=alt.Color('sum(Count):Q',
                             scale=alt.Scale(scheme='viridis'),
-                            title='Number of Days'),
+                            title='Antal dage'),
             tooltip=[
                 alt.Tooltip('Day:N'),
                 alt.Tooltip('Category:N'),
                 alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
             ]
         ).properties(
-            title='Leave Heatmap'
+            title='Fravær Heatmap'
         )
         st.altair_chart(heatmap, use_container_width=True)
 
@@ -544,11 +546,11 @@ def display_statistics(events):
             # Display metrics in columns
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total Leave Days", metrics['total_days'])
+                st.metric("Total fravær dage", metrics['total_days'])
             with col2:
-                st.metric("Average Days per Category", metrics['avg_per_category'])
+                st.metric("Gennemsnit per kategori", metrics['avg_per_category'])
             with col3:
-                st.metric("Most Common Day", metrics['most_common_day'])
+                st.metric("Mest sete dag", metrics['most_common_day'])
 
             # Display the combined chart
             st.altair_chart(chart, use_container_width=True)
