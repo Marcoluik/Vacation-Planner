@@ -310,10 +310,11 @@ class CalendarApp:
             return "Der opstod en fejl ved behandling af din forespørgsel."
 
     def main(self):
-        st.title("Vacation Calendar")
+
+        st.title("Ferieplan")
         self.setup_sidebar()
 
-        page_choice = st.sidebar.selectbox("Choose a page", ["Calendar", "Login"])
+        page_choice = st.sidebar.selectbox("Vælg side", ["Calendar", "Stats"])
         if page_choice == "Calendar":
             self.display_calendar()
         else:
