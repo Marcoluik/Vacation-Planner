@@ -45,7 +45,7 @@ class ColorManager:
     # Predefined colors for types
     TYPE_COLORS = {
         "Bygningskonstruktør": "#34a853",
-        "Admin": "#c19b41",
+        "Kontor": "#c19b41",
         "Tømrer": "#f045c1",
         "Formand": "#971a5b",
         "Nedriver": "#d9d9d9",
