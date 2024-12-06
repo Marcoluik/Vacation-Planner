@@ -431,9 +431,12 @@ class CalendarApp:
                          mode: bool = True, types: Optional[str] = None) -> None:
         """Display the calendar with filtered events."""
         print("Displaying calendar...")
-        if mode:
-            mode = st.selectbox("Kalender Mode:",
-                                ["daygrid", "timegrid", "timeline", "list", "multimonth"])
+
+        #if mode:
+            #mode = st.selectbox("Kalender Mode:",
+                                #["daygrid", "timegrid", "timeline", "list", "multimonth"])
+       
+        mode = "daygrid"
 
         # Handle user selection
         if not types:
@@ -442,25 +445,12 @@ class CalendarApp:
                                                   [None] + [user["name"] for user in DatabaseManager.all()]))
         else:
             selected_user = None
-        # Update events in session state
-        events_need_update = (
-                "events" not in st.session_state or
-                st.session_state.get("selected_user") != selected_user or
-                st.session_state.get("selected_type") != types
-        )
 
-        # If no update is needed, break the loop early
-        if not events_need_update:
-            state = calendar(
-                events=st.session_state.events,
-                options=DEFAULT_CALENDAR_OPTIONS
-            )
-
-            if state.get("eventsSet") is not None:
-                st.session_state["events"] = state["eventsSet"]
-
-            return
-        if events_need_update:
+        # Only update events if selection changes or events don't exist
+        if ("events" not in st.session_state or 
+                st.session_state.get("selected_user") != selected_user or 
+                st.session_state.get("selected_type") != types):
+            
             # Load new events based on the current user or type
             if types:
                 events = DatabaseManager.load_events(selected_user_type=types)
@@ -474,20 +464,15 @@ class CalendarApp:
             st.session_state.selected_user = selected_user
             st.session_state.selected_type = types
 
-
-        print(f"events_need_update: {events_need_update}")
-        print(f"st.session_state.selected_user: {st.session_state.get('selected_user')}")
-        print(f"st.session_state.selected_type: {st.session_state.get('selected_type')}")
-        print(f"selected_user: {selected_user}, types: {types}")
-
-        # Display calendar
+        # Display calendar with current events
         state = calendar(
             events=st.session_state.events,
             options=DEFAULT_CALENDAR_OPTIONS
         )
 
+        # Only update events if they've been modified through the calendar
         if state.get("eventsSet") is not None:
-            st.session_state["events"] = state["eventsSet"]
+            st.session_state.events = state["eventsSet"]
 
     def ask_assistant(self, content: str, database: List[Dict], data: Dict) -> str:
         try:
@@ -518,6 +503,7 @@ class CalendarApp:
     def main(self):
         st.title("Ferieplan")
         self.setup_sidebar()
+        
 
         page_choice = st.sidebar.selectbox("Vælg side", ["Calendar", "Stats"])
         if page_choice == "Calendar":
@@ -542,28 +528,44 @@ class CalendarApp:
 
     def login_page(self):
         """Handle login page display and functionality."""
-        #debug_database_contents()
         # Get unique names and types
         names = [item.get('name') for item in DatabaseManager.all() if item.get('name')] + ["All"]
         types = list(set(item.get('type') for item in DatabaseManager.all() if item.get('type')))
 
-        switch = st.radio("Sorter efter:", ["Navn", "Type"])
-        view_mode = st.radio("Vis data:", ["Calendar", "Statistics"])
+        # Create two columns for the control panel
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            st.subheader("Kontrol Panel")
+            switch = st.radio("Sorter efter:", ["Navn", "Type"])
+            view_mode = st.radio("Vis data:", ["Calendar", "Statistics"])
 
-        chosen = None
-        chosen_type = None
+        with col2:
+            st.subheader("Vælg Data")
+            chosen = None
+            chosen_type = None
 
-        if switch == "Navn":
-            chosen = st.selectbox("Vælg navn:", names)
-            if chosen == "All":
-                events = DatabaseManager.load_events()
-            elif chosen:
-                print(f"Loading events for user: {chosen}")
-                events = DatabaseManager.load_events(selected_user_name=chosen)
-        else:
-            chosen_type = st.selectbox("Vælg type:", types)
-            if chosen_type:
-                events = DatabaseManager.load_events(selected_user_type=chosen_type)
+            if switch == "Navn":
+                chosen = st.selectbox("Vælg navn:", names)
+            else:
+                chosen_type = st.selectbox("Vælg type:", types)
+            # AI Assistant section
+            question = st.text_input("Sprøg Kunsitg inteligens:")
+            if question:
+                dball = DatabaseManager.all()
+                current_data = chosen if chosen and chosen != "All" else dball
+                answer = self.ask_assistant(question, dball, current_data)
+                st.subheader("Assistant's Response:")
+                st.write(answer)
+
+        # Rest of your existing code...
+        if chosen == "All":
+            events = DatabaseManager.load_events()
+        elif chosen:
+            print(f"Loading events for user: {chosen}")
+            events = DatabaseManager.load_events(selected_user_name=chosen)
+        elif chosen_type:
+            events = DatabaseManager.load_events(selected_user_type=chosen_type)
 
         if view_mode == "Calendar":
             if chosen == "All":
@@ -589,73 +591,151 @@ class CalendarApp:
                 "Database Records": len(DatabaseManager.all())
             })
 
-        # AI Assistant section
-        question = st.text_input("Sprøg Kunsitg inteligens:")
-        if question:
-            dball = DatabaseManager.all()
-            current_data = chosen if chosen and chosen != "All" else dball
-            answer = self.ask_assistant(question, dball, current_data)
-            st.subheader("Assistant's Response:")
-            st.write(answer)
+        
 
 
 
 
-def calculate_statistics(events):
-    """Calculate statistics from events data with enhanced output for Altair."""
+def calculate_statistics(events, date_range: str = "all"):
+    """Calculate statistics from events data with date range filtering."""
     from collections import defaultdict
-
-    # Define weekday names
+    
+    # Define date ranges
+    now = datetime.now()
+    date_filters = {
+        "last_month": now - timedelta(days=30),
+        "last_6_months": now - timedelta(days=180),
+        "last_year": now - timedelta(days=365),
+        "all": datetime.min
+    }
+    
+    filter_date = date_filters.get(date_range, datetime.min)
+    
     weekday_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-
-    day_stats = defaultdict(int)
-    category_stats = defaultdict(int)
     combined_stats = []
 
     for event in events:
         start = datetime.strptime(event['start'], '%Y-%m-%d')
         end = datetime.strptime(event['end'], '%Y-%m-%d')
-
-        # Get category from title
+        
+        # Skip events outside the selected date range
+        if start < filter_date:
+            continue
+            
         category = event['title'].split(' - ')[1]
-
-        # Count days between start and end
+        
         current = start
         while current < end:
-            # Get day name using weekday index
             day_name = weekday_names[current.weekday()]
-            day_stats[day_name] += 1
-            category_stats[category] += 1
-
-            # Add to combined stats for detailed visualization
             combined_stats.append({
                 'Day': day_name,
                 'Category': category,
-                'Count': 1  # Each day counts as 1
+                'Count': 1
             })
-
             current += timedelta(days=1)
 
-    # Aggregate combined stats
+    # Create DataFrame and process as before
     df_combined = pd.DataFrame(combined_stats)
     if df_combined.empty:
-        # Create empty DataFrame with correct structure if no data
         return pd.DataFrame(columns=['Day', 'Category', 'Count'])
 
-    df_agg = df_combined.groupby(['Day', 'Category']).sum().reset_index()
-
-    # Ensure all day-category combinations exist
-    categories = df_agg['Category'].unique()
-
+    # Only aggregate the 'Count' column
+    df_agg = df_combined.groupby(['Day', 'Category'])['Count'].sum().reset_index()
+    
     # Create all possible combinations
+    categories = df_agg['Category'].unique()
     index = pd.MultiIndex.from_product([weekday_names, categories], names=['Day', 'Category'])
     df_full = pd.DataFrame(index=index).reset_index()
-
-    # Merge with actual data
+    
     df_final = df_full.merge(df_agg, on=['Day', 'Category'], how='left').fillna(0)
-
     return df_final
 
+def display_statistics(events):
+    """Display the statistics dashboard with date range filtering."""
+    # Add date range selector
+    date_range = st.selectbox(
+        "Vælg tidsperiode:",
+        ["all", "last_month", "last_6_months", "last_year"],
+        format_func=lambda x: {
+            "all": "Alle data",
+            "last_month": "Sidste måned",
+            "last_6_months": "Sidste 6 måneder",
+            "last_year": "Sidste år"
+        }[x]
+    )
+
+    if events:
+        # Calculate statistics with date range filter
+        df = calculate_statistics(events, date_range)
+        
+        # Debug print
+        st.write("Debug: Number of events in DataFrame:", len(df))
+        
+        if not df.empty:
+            # Create visualizations with filtered data
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                # Day of Week Chart
+                day_chart = alt.Chart(df).mark_bar().encode(
+                    x=alt.X('Day:N', sort=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
+                    y='sum(Count):Q',
+                    color='Category:N',
+                    tooltip=['Day:N', 'Category:N', 'Count:Q']
+                ).properties(
+                    title='Daglig fordeling',
+                    height=300
+                )
+                st.altair_chart(day_chart, use_container_width=True)
+
+            with col2:
+                # Category Chart
+                category_chart = alt.Chart(df).mark_bar().encode(
+                    x='Category:N',
+                    y='sum(Count):Q',
+                    color='Category:N',
+                    tooltip=['Category:N', 'Count:Q']
+                ).properties(
+                    title='Fraværstyper',
+                    height=300
+                )
+                st.altair_chart(category_chart, use_container_width=True)
+
+            with col3:
+                # Heatmap
+                heatmap = alt.Chart(df).mark_rect().encode(
+                    x=alt.X('Day:N', sort=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
+                    y='Category:N',
+                    color='Count:Q',
+                    tooltip=['Day:N', 'Category:N', 'Count:Q']
+                ).properties(
+                    title='Fravær Heatmap',
+                    height=300
+                )
+                st.altair_chart(heatmap, use_container_width=True)
+
+            # Calculate and display metrics
+            total_days = int(df['Count'].sum())
+            avg_per_category = round(df.groupby('Category')['Count'].sum().mean(), 1)
+            day_sums = df.groupby('Day')['Count'].sum()
+            most_common_day = day_sums.index[day_sums.values.argmax()] if not day_sums.empty else "N/A"
+
+            # Display metrics
+            metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+            with metrics_col1:
+                st.metric("Total fravær dage", total_days)
+            with metrics_col2:
+                st.metric("Gennemsnit per kategori", avg_per_category)
+            with metrics_col3:
+                st.metric("Mest sete dag", most_common_day)
+
+            # Debug: Display raw data
+            if st.checkbox("Vis rådata"):
+                st.write(df)
+        else:
+            st.warning("Ingen data fundet for den valgte periode")
+    else:
+        st.warning("Ingen fraværsdata tilgængelig")
 
 def create_leave_dashboard(events):
     """Create an interactive leave statistics dashboard using Altair."""
@@ -738,28 +818,6 @@ def create_leave_dashboard(events):
         'avg_per_category': round(avg_per_category, 1),
         'most_common_day': most_common_day
     }
-
-
-# Update the statistics section in your login_page method:
-def display_statistics(events):
-    """Display the statistics dashboard."""
-    if events:
-        chart, metrics = create_leave_dashboard(events)
-
-        if chart is not None:
-            # Display metrics in columns
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total fravær dage", metrics['total_days'])
-            with col2:
-                st.metric("Gennemsnit per kategori", metrics['avg_per_category'])
-            with col3:
-                st.metric("Mest sete dag", metrics['most_common_day'])
-
-            # Display the combined chart
-            st.altair_chart(chart, use_container_width=True)
-    else:
-        st.warning("No events data available for visualization")
 
 def debug_database_contents():
     users = DatabaseManager.all()
