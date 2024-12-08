@@ -255,7 +255,7 @@ class DatabaseManager:
         return False
 
 # Page configuration
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="FeriePlan", page_icon=":calendar:")
 
 # Constants
 try:
@@ -504,6 +504,8 @@ class CalendarApp:
         st.title("Ferieplan")
         self.setup_sidebar()
         
+
+
 
         page_choice = st.sidebar.selectbox("Vælg side", ["Calendar", "Stats"])
         if page_choice == "Calendar":
