@@ -265,7 +265,15 @@ except KeyError:
     st.error("OPENAI_API_KEY is missing in the secrets configuration.")
     st.stop()
 
-EVENT_TYPES = ["vacation", "sick", "child_sick", "training"]
+EVENT_KEY_MAPPING = {
+    "vacation": "Ferie",
+    "sick": "Sygdom",
+    "child_sick": "Barnsygdom",
+    "training": "Kursus"
+}
+
+EVENT_TYPES = list(EVENT_KEY_MAPPING.keys())
+
 DEFAULT_CALENDAR_OPTIONS = {
     "editable": True,
     "navLinks": True,
@@ -431,27 +439,30 @@ class CalendarApp:
                          mode: bool = True, types: Optional[str] = None) -> None:
         """Display the calendar with filtered events."""
         print("Displaying calendar...")
-
-        #if mode:
-            #mode = st.selectbox("Kalender Mode:",
-                                #["daygrid", "timegrid", "timeline", "list", "multimonth"])
-       
+        
         mode = "daygrid"
 
-        # Handle user selection
+        # Move user selection to session state if not already there
+        if "selected_user" not in st.session_state:
+            st.session_state.selected_user = user_override if user_override else None
+        
+        # Handle user selection only if not already in session state
         if not types:
+            if "user_list" not in st.session_state:
+                st.session_state.user_list = [user["name"] for user in DatabaseManager.all()]
+            
             selected_user = (user_override if user_override else
                              st.sidebar.selectbox("Vælg bruger",
-                                                  [None] + [user["name"] for user in DatabaseManager.all()]))
+                                                  [None] + st.session_state.user_list,
+                                                  key="user_selector"))
         else:
             selected_user = None
 
-        # Only update events if selection changes or events don't exist
+        # Only load events if they haven't been loaded or selection changed
         if ("events" not in st.session_state or 
                 st.session_state.get("selected_user") != selected_user or 
                 st.session_state.get("selected_type") != types):
             
-            # Load new events based on the current user or type
             if types:
                 events = DatabaseManager.load_events(selected_user_type=types)
             elif selected_user:
@@ -459,15 +470,23 @@ class CalendarApp:
             else:
                 events = DatabaseManager.load_events()
 
-            # Store events and selections in session state
             st.session_state.events = events
             st.session_state.selected_user = selected_user
             st.session_state.selected_type = types
 
+        # Add calendar options to prevent unnecessary reloads
+        calendar_options = {
+            **DEFAULT_CALENDAR_OPTIONS,
+            "loading": False,  # Disable loading indicator
+            "rerenderDelay": 0,  # Minimize rerender delay
+            "handleWindowResize": False,  # Disable auto resize handling
+        }
+
         # Display calendar with current events
         state = calendar(
             events=st.session_state.events,
-            options=DEFAULT_CALENDAR_OPTIONS
+            options=calendar_options,
+            key="main_calendar"  # Add a stable key
         )
 
         # Only update events if they've been modified through the calendar
@@ -520,10 +539,20 @@ class CalendarApp:
             user_type = st.text_input("Brugertype")
             start = st.date_input("Start")
             end = st.date_input("Slut")
-            off_type = st.selectbox("Type fravær", EVENT_TYPES, index=0)
-
+            
+            # Create a reverse mapping for the form_submit_button to convert back to keys
+            reverse_mapping = {v: k for k, v in EVENT_KEY_MAPPING.items()}
+            
+            # Show Danish labels in selectbox but get the English key when selected
+            selected_label = st.selectbox(
+                "Type fravær",
+                options=EVENT_KEY_MAPPING.values(),
+                index=0
+            )
+            
             if st.form_submit_button("Tilføj"):
-                event_type = off_type
+                # Convert the Danish label back to the English key
+                event_type = reverse_mapping[selected_label]
                 DatabaseManager.add_or_update_user(
                     name, user_type, **{event_type: [(start, end)]}
                 )
@@ -707,9 +736,15 @@ def display_statistics(events):
                 # Heatmap
                 heatmap = alt.Chart(df).mark_rect().encode(
                     x=alt.X('Day:N', sort=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
-                    y='Category:N',
-                    color='Count:Q',
-                    tooltip=['Day:N', 'Category:N', 'Count:Q']
+                    y=alt.Y('Category:N', title='Kategori'),
+                    color=alt.Color('sum(Count):Q',
+                                    scale=alt.Scale(scheme='viridis'),
+                                    title='Antal dage'),
+                    tooltip=[
+                        alt.Tooltip('Day:N'),
+                        alt.Tooltip('Category:N'),
+                        alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
+                    ]
                 ).properties(
                     title='Fravær Heatmap',
                     height=300
