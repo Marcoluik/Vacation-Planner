@@ -631,8 +631,7 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
                 current_data = chosen if chosen and chosen != "All" else dball
                 answer = self.ask_assistant(question, dball, current_data)
                 st.subheader("Assistant's Response:")
-        if answer:
-            st.write(answer)
+                st.write(answer)
 
         # Rest of your existing code...
         if chosen == "All":
