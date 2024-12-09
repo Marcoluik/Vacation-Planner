@@ -1,3 +1,5 @@
+from email.contentmanager import maintype
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -13,6 +15,29 @@ import firebase_admin
 from firebase_admin import credentials, db
 import json
 
+st.set_page_config(layout="wide", page_title="FeriePlan", page_icon=":calendar:")
+
+try:
+    API = st.secrets['OPENAI_API_KEY']
+    OPENAI_API_KEY = API
+except KeyError:
+    st.error("OPENAI_API_KEY is missing in the secrets configuration.")
+    st.stop()
+
+EVENT_KEY_MAPPING = {
+    "vacation": "Ferie",
+    "sick": "Sygdom",
+    "child_sick": "Barnsygdom",
+    "training": "Kursus"
+}
+
+EVENT_TYPES = list(EVENT_KEY_MAPPING.keys())
+
+DEFAULT_CALENDAR_OPTIONS = {
+    "editable": True,
+    "navLinks": True,
+    "selectable": True
+}
 
 class FirebaseManager:
     @staticmethod
@@ -254,31 +279,7 @@ class DatabaseManager:
         st.error(f"No user found with name {name}")
         return False
 
-# Page configuration
-st.set_page_config(layout="wide", page_title="FeriePlan", page_icon=":calendar:")
 
-# Constants
-try:
-    API = st.secrets['OPENAI_API_KEY']
-    OPENAI_API_KEY = API
-except KeyError:
-    st.error("OPENAI_API_KEY is missing in the secrets configuration.")
-    st.stop()
-
-EVENT_KEY_MAPPING = {
-    "vacation": "Ferie",
-    "sick": "Sygdom",
-    "child_sick": "Barnsygdom",
-    "training": "Kursus"
-}
-
-EVENT_TYPES = list(EVENT_KEY_MAPPING.keys())
-
-DEFAULT_CALENDAR_OPTIONS = {
-    "editable": True,
-    "navLinks": True,
-    "selectable": True
-}
 
 
 class ColorManager:
@@ -442,9 +443,13 @@ class CalendarApp:
         
         mode = "daygrid"
 
-        # Move user selection to session state if not already there
-        if "selected_user" not in st.session_state:
-            st.session_state.selected_user = user_override if user_override else None
+        # Force reload events when user_override changes
+        if user_override != st.session_state.get("selected_user"):
+            if "events" in st.session_state:
+                del st.session_state.events
+        
+        # Move user selection to session state
+        st.session_state.selected_user = user_override if user_override else None
         
         # Handle user selection only if not already in session state
         if not types:
@@ -458,40 +463,33 @@ class CalendarApp:
         else:
             selected_user = None
 
-        # Only load events if they haven't been loaded or selection changed
-        if ("events" not in st.session_state or 
-                st.session_state.get("selected_user") != selected_user or 
-                st.session_state.get("selected_type") != types):
-            
-            if types:
-                events = DatabaseManager.load_events(selected_user_type=types)
-            elif selected_user:
-                events = DatabaseManager.load_events(selected_user_name=selected_user)
-            else:
-                events = DatabaseManager.load_events()
+        # Always reload events when selection changes
+        events = (DatabaseManager.load_events(selected_user_type=types) if types
+                 else DatabaseManager.load_events(selected_user_name=selected_user)
+                 if selected_user
+                 else DatabaseManager.load_events())
+        
+        st.session_state.events = events
+        st.session_state.selected_user = selected_user
+        st.session_state.selected_type = types
 
-            st.session_state.events = events
-            st.session_state.selected_user = selected_user
-            st.session_state.selected_type = types
-
-        # Add calendar options to prevent unnecessary reloads
+        # Add calendar options
         calendar_options = {
             **DEFAULT_CALENDAR_OPTIONS,
-            "loading": False,  # Disable loading indicator
-            "rerenderDelay": 0,  # Minimize rerender delay
-            "handleWindowResize": False,  # Disable auto resize handling
+            "loading": False,
+            "rerenderDelay": 0,
+            "handleWindowResize": False,
         }
 
+        # Force calendar rerender with unique key based on selection
+        calendar_key = f"calendar_{selected_user or types or 'all'}"
+        
         # Display calendar with current events
         state = calendar(
-            events=st.session_state.events,
+            events=events,  # Use events directly instead of session state
             options=calendar_options,
-            key="main_calendar"  # Add a stable key
+            key=calendar_key  # Use dynamic key to force rerender
         )
-
-        # Only update events if they've been modified through the calendar
-        if state.get("eventsSet") is not None:
-            st.session_state.events = state["eventsSet"]
 
     def ask_assistant(self, content: str, database: List[Dict], data: Dict) -> str:
         try:
@@ -500,11 +498,38 @@ class CalendarApp:
                 messages=[
                     {
                         "role": "system",
-                        "content": "Du er en professionel mønstergenkendelsesrobot. "
-                                   "Du vil analysere mønstre i folks fridage fra arbejde. "
-                                   "Du modtager en database med alle personers orlov. "
-                                   "Du vil derefter analysere for mønstre og markere, "
-                                   "når nogen har vist et mønster i deres orlov."
+                        "content": """Du er en specialiseret analyseekspert med fokus på fraværsmønstre i arbejdsmiljøer.
+
+Din primære opgave er at:
+1. Analysere medarbejderes fraværsdata for at identificere mønstre
+2. Vurdere om disse mønstre er statistisk signifikante
+3. Kategorisere mønstre i følgende typer:
+   - Tidsmæssige mønstre (bestemte ugedage, måneder, eller årstider)
+   - Længdemønstre (varighed af fravær)
+   - Frekvensbaserede mønstre (hyppighed af fravær)
+   - Kategorimønstre (typer af fravær)
+
+Format din analyse således:
+1. Identificerede mønstre
+2. Statistisk relevans
+3. Mulige årsagssammenhænge
+4. Anbefalinger (hvis relevant)
+
+Databasestruktur:
+- Hver post indeholder: navn, fraværstype, start- og slutdato
+- Fraværstyper inkluderer: Ferie, Sygdom, Barnsygdom, Kursus
+
+Vær objektiv og faktabaseret i din analyse, og undgå at drage forhastede konklusioner."""
+                },
+                {
+                    "role": "user",
+                    "content": f"""Analysér følgende fraværsdata:
+
+Forespørgsel: {content}
+Specifik data: {data}
+Komplet database: {database}
+
+Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
                     },
                     {
                         "role": "user",
@@ -521,16 +546,37 @@ class CalendarApp:
 
     def main(self):
         st.title("Ferieplan")
-        self.setup_sidebar()
-        
 
 
+        # Check if the user is logged in
+        if "user" not in st.session_state:
+            self.login_page()
+            return
+
+        if st.session_state.user == "admin":
+            self.setup_sidebar()
 
         page_choice = st.sidebar.selectbox("Vælg side", ["Calendar", "Stats"])
         if page_choice == "Calendar":
             self.display_calendar()
         else:
-            self.login_page()
+            self.secrets()
+
+    def login_page(self):
+        st.title("Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            if username == st.secrets["ADMIN_USERNAME"] and password == st.secrets["ADMIN_PASSWORD"]:
+                st.session_state.user = "admin"
+                st.success("Logged in as admin")
+                self.display_calendar()
+            elif username == st.secrets["USER_USERNAME"] and password == st.secrets["USER_PASSWORD"]:
+                st.session_state.user = "user"
+                st.success("Logged in as user")
+                self.display_calendar()
+            else:
+                st.error("Incorrect username or password")
 
     def setup_sidebar(self):
         st.sidebar.header("Brugerdata")
@@ -557,15 +603,15 @@ class CalendarApp:
                     name, user_type, **{event_type: [(start, end)]}
                 )
 
-    def login_page(self):
-        """Handle login page display and functionality."""
+
+    def secrets(self):
         # Get unique names and types
         names = [item.get('name') for item in DatabaseManager.all() if item.get('name')] + ["All"]
         types = list(set(item.get('type') for item in DatabaseManager.all() if item.get('type')))
 
         # Create two columns for the control panel
         col1, col2 = st.columns([1, 2])
-        
+
         with col1:
             st.subheader("Kontrol Panel")
             switch = st.radio("Sorter efter:", ["Navn", "Type"])
@@ -575,7 +621,7 @@ class CalendarApp:
             st.subheader("Vælg Data")
             chosen = None
             chosen_type = None
-
+ 
             if switch == "Navn":
                 chosen = st.selectbox("Vælg navn:", names)
             else:
@@ -587,7 +633,8 @@ class CalendarApp:
                 current_data = chosen if chosen and chosen != "All" else dball
                 answer = self.ask_assistant(question, dball, current_data)
                 st.subheader("Assistant's Response:")
-                st.write(answer)
+        if answer:
+            st.write(answer)
 
         # Rest of your existing code...
         if chosen == "All":
