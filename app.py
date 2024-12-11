@@ -27,7 +27,8 @@ EVENT_KEY_MAPPING = {
     "sick": "Sygdom",
     "child_sick": "Barnsygdom",
     "training": "Kursus",
-    "maternity": "Barsel"
+    "maternity": "Barsel",
+    "Free": "Fri"
 }
 
 EVENT_TYPES = list(EVENT_KEY_MAPPING.keys())
