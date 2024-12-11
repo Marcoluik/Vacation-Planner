@@ -91,13 +91,13 @@ class DatabaseManager:
                 ]
 
             #print(f"Processed users: {users}")
+
             return users
 
         except Exception as e:
             print(f"Error retrieving all users: {e}")
             return []
 
-    @staticmethod
     @staticmethod
     def add_or_update_user(name: str, type: str, **events) -> None:
         """
@@ -119,23 +119,6 @@ class DatabaseManager:
         ref = FirebaseManager.get_ref("/_default")
         colors_ref = FirebaseManager.get_ref("colors")
 
-        # Convert dates to ISO format strings
-        formatted_events = {
-            k: [(s.isoformat(), e.isoformat()) for s, e in v] if v else []
-            for k, v in events.items()
-        }
-
-        # Get color based on type
-        color = ColorManager.get_color_for_type(type)
-
-        # Prepare user data
-        user_data = {
-            "name": name,
-            "type": type,
-            "color": color,
-            **formatted_events
-        }
-
         try:
             # Find existing user by name
             existing_users = ref.get() or {}
@@ -145,30 +128,67 @@ class DatabaseManager:
             existing_colors = colors_ref.get() or {}
             if type not in existing_colors:
                 # Add new color entry for the type
+                color = ColorManager.get_color_for_type(type)
                 colors_ref.child(type).set(color)
                 print(f"Added new color entry for type: {type}")
 
             user_key = None
+            existing_user_data = None
             for key, user in existing_users.items():
                 if isinstance(user, dict) and user.get('name') == name:
                     user_key = key
+                    existing_user_data = user
                     break
+
+            # Prepare the new event data
+            formatted_events = {}
+            for event_type, date_ranges in events.items():
+                if date_ranges:  # Only process if there are new date ranges
+                    new_ranges = [(s.isoformat(), e.isoformat()) for s, e in date_ranges]
+                    
+                    # If updating existing user, merge with existing events
+                    if existing_user_data and event_type in existing_user_data:
+                        existing_ranges = existing_user_data.get(event_type, [])
+                        # Combine existing and new ranges
+                        formatted_events[event_type] = existing_ranges + new_ranges
+                    else:
+                        formatted_events[event_type] = new_ranges
 
             if user_key:
                 # Update existing user
                 print(f"Updating existing user with key: {user_key}")
-                ref.child(user_key).update(user_data)
+                # Merge existing data with updates
+                update_data = {
+                    "name": name,
+                    "type": type,
+                    "color": ColorManager.get_color_for_type(type)
+                }
+                # Only update event types that have new data
+                for event_type, ranges in formatted_events.items():
+                    update_data[event_type] = ranges
+                
+                # Preserve existing event types that aren't being updated
+                for event_type in EVENT_TYPES:
+                    if event_type not in formatted_events and event_type in existing_user_data:
+                        update_data[event_type] = existing_user_data[event_type]
+                
+                ref.child(user_key).update(update_data)
                 st.success(f"Updated events for {name}")
             else:
                 # Add new user
                 print("Adding new user")
+                user_data = {
+                    "name": name,
+                    "type": type,
+                    "color": ColorManager.get_color_for_type(type),
+                    **formatted_events
+                }
                 ref.push(user_data)
                 st.success(f"User {name} added successfully.")
 
         except Exception as e:
             print(f"Error adding/updating user: {e}")
             st.error(f"Error adding/updating user: {e}")
-
 
     @staticmethod
     def search(query):
@@ -449,27 +469,54 @@ class CalendarApp:
         # Move user selection to session state
         st.session_state.selected_user = user_override if user_override else None
         
+        # Initialize session state for user and type lists
+        if "user_list" not in st.session_state or "type_list" not in st.session_state:
+            users = DatabaseManager.all()
+            st.session_state.user_list = [user["name"] for user in users if "name" in user]
+            st.session_state.type_list = list(set(user["type"] for user in users if "type" in user))
+        
         # Handle user selection only if not already in session state
         if not types:
-            if "user_list" not in st.session_state:
-                st.session_state.user_list = [user["name"] for user in DatabaseManager.all()]
+            # Add radio button for switching between name and type selection
+            selection_mode = st.sidebar.radio("Vælg filter:", ["Efter navn", "Efter type"])
             
-            selected_user = (user_override if user_override else
-                             st.sidebar.selectbox("Vælg bruger",
-                                                  [None] + st.session_state.user_list,
-                                                  key="user_selector"))
+            if selection_mode == "Efter navn":
+                selected_users = st.sidebar.multiselect(
+                    "Vælg brugere",
+                    options=st.session_state.user_list,
+                    key="user_selector"
+                )
+                selected_type = None
+            else:  # "Efter type"
+                selected_users = None
+                selected_type = st.sidebar.multiselect(
+                    "Vælg typer",
+                    options=st.session_state.type_list,
+                    key="type_selector"
+                )
         else:
-            selected_user = None
+            selected_users = None
+            selected_type = types
 
-        # Always reload events when selection changes
-        events = (DatabaseManager.load_events(selected_user_type=types) if types
-                 else DatabaseManager.load_events(selected_user_name=selected_user)
-                 if selected_user
-                 else DatabaseManager.load_events())
+        # Load events based on both user and type selections
+        all_events = []
+        if selected_users:
+            for user in selected_users:
+                events = DatabaseManager.load_events(selected_user_name=user)
+                all_events.extend(events)
+        elif selected_type:
+            if isinstance(selected_type, list):
+                for type_ in selected_type:
+                    events = DatabaseManager.load_events(selected_user_type=type_)
+                    all_events.extend(events)
+            else:
+                all_events = DatabaseManager.load_events(selected_user_type=selected_type)
+        else:
+            all_events = DatabaseManager.load_events()
         
-        st.session_state.events = events
-        st.session_state.selected_user = selected_user
-        st.session_state.selected_type = types
+        st.session_state.events = all_events
+        st.session_state.selected_users = selected_users
+        st.session_state.selected_type = selected_type
 
         # Add calendar options
         calendar_options = {
@@ -480,13 +527,13 @@ class CalendarApp:
         }
 
         # Force calendar rerender with unique key based on selection
-        calendar_key = f"calendar_{selected_user or types or 'all'}"
+        calendar_key = f"calendar_{'-'.join(selected_users) if selected_users else '-'.join(selected_type) if isinstance(selected_type, list) else 'all'}"
         
         # Display calendar with current events
         state = calendar(
-            events=events,  # Use events directly instead of session state
+            events=all_events,
             options=calendar_options,
-            key=calendar_key  # Use dynamic key to force rerender
+            key=calendar_key
         )
 
     def ask_assistant(self, content: str, database: List[Dict], data: Dict) -> str:
@@ -554,8 +601,8 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         if st.session_state.user == "admin":
             self.setup_sidebar()
 
-        page_choice = st.sidebar.selectbox("Vælg side", ["Calendar", "Stats"])
-        if page_choice == "Calendar":
+        page_choice = st.sidebar.selectbox("Vælg side", ["Kalender", "Statistik"])
+        if page_choice == "Kalender":
             self.display_calendar()
         else:
             self.secrets()
@@ -578,30 +625,60 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
 
     def setup_sidebar(self):
         st.sidebar.header("Brugerdata")
+        is_new_user = st.sidebar.checkbox("Ny bruger", key="Ny bruger")
+
+        # Handle user/type selection outside the form
+        if not is_new_user:
+            nametype = {}
+            all_types = set()  
+            
+            for item in DatabaseManager.all():
+                name = item.get("name")
+                type_val = item.get("type")
+                if name and type_val:
+                    nametype[name] = type_val
+                    all_types.add(type_val)
+
+            # Move name selection outside the form
+            selected_name = st.sidebar.selectbox("Navne", nametype.keys(), key='name_select')
+            
+            # Get the current user's type
+            current_type = nametype.get(selected_name)
+            all_types_list = list(all_types)
+            
+            # Find the index of the current type
+            default_index = all_types_list.index(current_type) if current_type in all_types_list else 0
+            
+            # Move type selection outside the form
+            selected_type = st.sidebar.selectbox("Type", all_types_list, 
+                                        index=default_index,
+                                        key=f"type_{selected_name}")
+
+        # Now handle the form for date inputs and submission
         with st.sidebar.form(key="add_user_form"):
-            name = st.text_input("Navn")
-            user_type = st.text_input("Brugertype")
+            if is_new_user:
+                name = st.text_input("Navn")
+                user_type = st.text_input("Brugertype")
+            else:
+                # Use the selected values from outside the form
+                name = selected_name
+                user_type = selected_type
+                
             start = st.date_input("Start")
             end = st.date_input("Slut")
-            
-            # Create a reverse mapping for the form_submit_button to convert back to keys
+
             reverse_mapping = {v: k for k, v in EVENT_KEY_MAPPING.items()}
-            
-            # Show Danish labels in selectbox but get the English key when selected
             selected_label = st.selectbox(
                 "Type fravær",
                 options=EVENT_KEY_MAPPING.values(),
                 index=0
             )
-            
+
             if st.form_submit_button("Tilføj"):
-                # Convert the Danish label back to the English key
                 event_type = reverse_mapping[selected_label]
                 DatabaseManager.add_or_update_user(
                     name, user_type, **{event_type: [(start, end)]}
                 )
-
-
     def secrets(self):
         # Get unique names and types
         names = [item.get('name') for item in DatabaseManager.all() if item.get('name')] + ["All"]
@@ -613,7 +690,7 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         with col1:
             st.subheader("Kontrol Panel")
             switch = st.radio("Sorter efter:", ["Navn", "Type"])
-            view_mode = st.radio("Vis data:", ["Calendar", "Statistics"])
+            view_mode = st.radio("Vis data:", ["Kalender", "Statistik"])
 
         with col2:
             st.subheader("Vælg Data")
@@ -625,7 +702,7 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
             else:
                 chosen_type = st.selectbox("Vælg type:", types)
             # AI Assistant section
-            question = st.text_input("Sprøg Kunsitg inteligens:")
+            question = st.text_input("Spørg kunstig intelligens:")
             if question:
                 dball = DatabaseManager.all()
                 current_data = chosen if chosen and chosen != "All" else dball
@@ -642,7 +719,7 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         elif chosen_type:
             events = DatabaseManager.load_events(selected_user_type=chosen_type)
 
-        if view_mode == "Calendar":
+        if view_mode == "Kalender":
             if chosen == "All":
                 self.display_calendar()
                 print("Displaying calendar for all users")
@@ -727,24 +804,56 @@ def calculate_statistics(events, date_range: str = "all"):
 
 def display_statistics(events):
     """Display the statistics dashboard with date range filtering."""
-    # Add date range selector
-    date_range = st.selectbox(
-        "Vælg tidsperiode:",
-        ["all", "last_month", "last_6_months", "last_year"],
-        format_func=lambda x: {
-            "all": "Alle data",
-            "last_month": "Sidste måned",
-            "last_6_months": "Sidste 6 måneder",
-            "last_year": "Sidste år"
-        }[x]
+    # First handle preset selection before creating date inputs
+    preset_range = st.selectbox(
+        "Forudindstillede perioder",
+        ["Custom", "Sidste måned", "Sidste 6 måneder", "Sidste år", "Alle data"],
+        key="preset_range"
     )
+    
+    # Calculate default dates based on preset
+    today = datetime.now()
+    if preset_range == "Sidste måned":
+        default_start = today - timedelta(days=30)
+    elif preset_range == "Sidste 6 måneder":
+        default_start = today - timedelta(days=180)
+    elif preset_range == "Sidste år":
+        default_start = today - timedelta(days=365)
+    elif preset_range == "Alle data":
+        default_start = datetime(2024, 10, 1)
+    else:  # Custom
+        default_start = today - timedelta(days=30)
+    
+    # Create columns for date selection
+    date_col1, date_col2 = st.columns(2)
+    
+    with date_col1:
+        start_date = st.date_input(
+            "Fra dato",
+            value=default_start,
+            key="stats_start_date"
+        )
+    
+    with date_col2:
+        end_date = st.date_input(
+            "Til dato",
+            value=today,
+            key="stats_end_date"
+        )
 
     if events:
-        # Calculate statistics with date range filter
-        df = calculate_statistics(events, date_range)
-        
-        # Debug print
-        st.write("Debug: Number of events in DataFrame:", len(df))
+        # Filter events based on selected date range
+        filtered_events = []
+        for event in events:
+            event_start = datetime.strptime(event['start'], '%Y-%m-%d').date()
+            event_end = datetime.strptime(event['end'], '%Y-%m-%d').date()
+            
+            # Check if event overlaps with selected date range
+            if (event_start <= end_date and event_end >= start_date):
+                filtered_events.append(event)
+
+        # Calculate statistics with filtered events
+        df = calculate_statistics(filtered_events)
         
         if not df.empty:
             # Create visualizations with filtered data
