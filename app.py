@@ -28,7 +28,8 @@ EVENT_KEY_MAPPING = {
     "child_sick": "Barnsygdom",
     "training": "Kursus",
     "maternity": "Barsel",
-    "Free": "Fri"
+    "Free": "Fri",
+    "School": "Skole"
 }
 
 EVENT_TYPES = list(EVENT_KEY_MAPPING.keys())
@@ -765,7 +766,8 @@ def calculate_statistics(events, date_range: str = "all"):
     
     filter_date = date_filters.get(date_range, datetime.min)
     
-    weekday_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    # Remove Saturday and Sunday from weekday names
+    weekday_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     combined_stats = []
 
     for event in events:
@@ -780,12 +782,14 @@ def calculate_statistics(events, date_range: str = "all"):
         
         current = start
         while current < end:
-            day_name = weekday_names[current.weekday()]
-            combined_stats.append({
-                'Day': day_name,
-                'Category': category,
-                'Count': 1
-            })
+            # Skip weekends (5 = Saturday, 6 = Sunday)
+            if current.weekday() < 5:  # Only process weekdays
+                day_name = weekday_names[current.weekday()]
+                combined_stats.append({
+                    'Day': day_name,
+                    'Category': category,
+                    'Count': 1
+                })
             current += timedelta(days=1)
 
     # Create DataFrame and process as before
@@ -796,7 +800,7 @@ def calculate_statistics(events, date_range: str = "all"):
     # Only aggregate the 'Count' column
     df_agg = df_combined.groupby(['Day', 'Category'])['Count'].sum().reset_index()
     
-    # Create all possible combinations
+    # Create all possible combinations (excluding weekends)
     categories = df_agg['Category'].unique()
     index = pd.MultiIndex.from_product([weekday_names, categories], names=['Day', 'Category'])
     df_full = pd.DataFrame(index=index).reset_index()
