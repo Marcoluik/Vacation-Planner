@@ -698,50 +698,62 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         with col2:
             st.subheader("Vælg Data")
             chosen = None
-            chosen_type = None
- 
+            chosen_types = None
+
             if switch == "Navn":
-                chosen = st.selectbox("Vælg navn:", names)
+                chosen = st.multiselect("Vælg navne:", names)
             else:
-                chosen_type = st.selectbox("Vælg type:", types)
+                chosen_types = st.multiselect("Vælg typer:", types)
+
             # AI Assistant section
             question = st.text_input("Spørg kunstig intelligens:")
             if question:
                 dball = DatabaseManager.all()
-                current_data = chosen if chosen and chosen != "All" else dball
+                current_data = chosen if chosen and "All" not in chosen else dball
                 answer = self.ask_assistant(question, dball, current_data)
                 st.subheader("Assistant's Response:")
                 st.write(answer)
 
-        # Rest of your existing code...
-        if chosen == "All":
-            events = DatabaseManager.load_events()
-        elif chosen:
-            print(f"Loading events for user: {chosen}")
-            events = DatabaseManager.load_events(selected_user_name=chosen)
-        elif chosen_type:
-            events = DatabaseManager.load_events(selected_user_type=chosen_type)
+        # Load events based on selections
+        events = []
+        if chosen:
+            if "All" in chosen:
+                events = DatabaseManager.load_events()
+            else:
+                for name in chosen:
+                    events.extend(DatabaseManager.load_events(selected_user_name=name))
+        elif chosen_types:
+            for type_ in chosen_types:
+                events.extend(DatabaseManager.load_events(selected_user_type=type_))
 
         if view_mode == "Kalender":
-            if chosen == "All":
-                self.display_calendar()
-                print("Displaying calendar for all users")
-            elif chosen:
-                self.display_calendar(user_override=chosen)
-                print(f"Displaying calendar for user: {chosen}")
-            elif chosen_type:
-                self.display_calendar(types=chosen_type)
-                print(f"Displaying calendar for type: {chosen_type}")
+            # Use the same calendar display logic as the sidebar
+            calendar_options = {
+                **DEFAULT_CALENDAR_OPTIONS,
+                "loading": False,
+                "rerenderDelay": 0,
+                "handleWindowResize": False,
+            }
+
+            # Force calendar rerender with unique key based on selection
+            calendar_key = f"calendar_{'-'.join(chosen) if chosen else '-'.join(chosen_types) if chosen_types else 'all'}"
+            
+            # Display calendar with current events
+            state = calendar(
+                events=events,
+                options=calendar_options,
+                key=calendar_key
+            )
         else:  # Statistics view
             if events:
                 display_statistics(events)
 
-        # Debug information and AI Assistant section
+        # Debug information
         if st.checkbox("-$-"):
             st.write("Valgt:")
             st.write({
-                "Chosen Name": chosen,
-                "Chosen Type": chosen_type,
+                "Chosen Names": chosen,
+                "Chosen Types": chosen_types,
                 "Number of Events": len(events) if events else 0,
                 "Database Records": len(DatabaseManager.all())
             })
