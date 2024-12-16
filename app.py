@@ -581,7 +581,7 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         if st.button("Login"):
-            if username in ADMIN_CREDENTIALS and password == ADMIN_CREDENTIALS[username]:
+            if username in st.secrets["ADMIN_CREDENTIALS"] and password == st.secrets["ADMIN_CREDENTIALS"][username]:
                 st.session_state.user = "admin"
                 st.success(f"Logged in as {username} (admin)")
                 self.display_calendar()
