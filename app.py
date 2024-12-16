@@ -193,6 +193,10 @@ class DatabaseManager:
             print(f"Error adding/updating user: {e}")
             st.error(f"Error adding/updating user: {e}")
 
+        # Clear calendar events cache to force reload
+        if "calendar_events" in st.session_state:
+            del st.session_state.calendar_events
+
     @staticmethod
     def search(query):
         """
@@ -459,69 +463,27 @@ class CalendarApp:
 
     def display_calendar(self, user_override: Optional[str] = None,
                          mode: bool = True, types: Optional[str] = None) -> None:
-        """Display the calendar with filtered events."""
-        print("Displaying calendar...")
+        print("\n=== display_calendar called ===")
+        print(f"Session state keys: {st.session_state.keys()}")
+        print(f"User override: {user_override}")
+        print(f"Types: {types}")
         
+        # Initialize calendar_events if not present
+        if "calendar_events" not in st.session_state:
+            print(">>> Loading events (not in session state)")
+            events = DatabaseManager.load_events(
+                selected_user_name=user_override,
+                selected_user_type=types
+            )
+            print(f">>> Events loaded: {len(events)} events")
+            st.session_state.calendar_events = events
+        else:
+            print(">>> Using cached events from session state")
+            events = st.session_state.calendar_events
+        
+        print(">>> Rendering calendar...")
         mode = "daygrid"
-
-        # Force reload events when user_override changes
-        if user_override != st.session_state.get("selected_user"):
-            if "events" in st.session_state:
-                del st.session_state.events
         
-        # Move user selection to session state
-        st.session_state.selected_user = user_override if user_override else None
-        
-        # Initialize session state for user and type lists
-        if "user_list" not in st.session_state or "type_list" not in st.session_state:
-            users = DatabaseManager.all()
-            st.session_state.user_list = [user["name"] for user in users if "name" in user]
-            st.session_state.type_list = list(set(user["type"] for user in users if "type" in user))
-        
-        # Handle user selection only if not already in session state
-        if not types:
-            # Add radio button for switching between name and type selection
-            selection_mode = st.sidebar.radio("Vælg filter:", ["Efter navn", "Efter type"])
-            
-            if selection_mode == "Efter navn":
-                selected_users = st.sidebar.multiselect(
-                    "Vælg brugere",
-                    options=st.session_state.user_list,
-                    key="user_selector"
-                )
-                selected_type = None
-            else:  # "Efter type"
-                selected_users = None
-                selected_type = st.sidebar.multiselect(
-                    "Vælg typer",
-                    options=st.session_state.type_list,
-                    key="type_selector"
-                )
-        else:
-            selected_users = None
-            selected_type = types
-
-        # Load events based on both user and type selections
-        all_events = []
-        if selected_users:
-            for user in selected_users:
-                events = DatabaseManager.load_events(selected_user_name=user)
-                all_events.extend(events)
-        elif selected_type:
-            if isinstance(selected_type, list):
-                for type_ in selected_type:
-                    events = DatabaseManager.load_events(selected_user_type=type_)
-                    all_events.extend(events)
-            else:
-                all_events = DatabaseManager.load_events(selected_user_type=selected_type)
-        else:
-            all_events = DatabaseManager.load_events()
-        
-        st.session_state.events = all_events
-        st.session_state.selected_users = selected_users
-        st.session_state.selected_type = selected_type
-
-        # Add calendar options
         calendar_options = {
             **DEFAULT_CALENDAR_OPTIONS,
             "loading": False,
@@ -529,15 +491,18 @@ class CalendarApp:
             "handleWindowResize": False,
         }
 
-        # Force calendar rerender with unique key based on selection
-        calendar_key = f"calendar_{'-'.join(selected_users) if selected_users else '-'.join(selected_type) if isinstance(selected_type, list) else 'all'}"
-        
-        # Display calendar with current events
+        # Add unique key based on current state
+        calendar_key = f"calendar_{id(events)}"
+        print(f">>> Using calendar key: {calendar_key}")
+
+        print(f">>> About to render calendar with {len(events)} events")
         state = calendar(
-            events=all_events,
+            events=events,  # Use local events variable instead of directly accessing session state
             options=calendar_options,
             key=calendar_key
         )
+        print(">>> Calendar rendered")
+        print("=== display_calendar complete ===\n")
 
     def ask_assistant(self, content: str, database: List[Dict], data: Dict) -> str:
         try:
@@ -607,6 +572,7 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         page_choice = st.sidebar.selectbox("Vælg side", ["Kalender", "Statistik"])
         if page_choice == "Kalender":
             self.display_calendar()
+            print("page choice: ", page_choice)
         else:
             self.secrets()
 
@@ -615,9 +581,9 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         if st.button("Login"):
-            if username == st.secrets["ADMIN_USERNAME"] and password == st.secrets["ADMIN_PASSWORD"]:
+            if username in st.secrets["ADMIN_USERNAME"] and password == st.secrets["ADMIN_PASSWORD"]:
                 st.session_state.user = "admin"
-                st.success("Logged in as admin")
+                st.success(f"Logged in as {username} (admin)")
                 self.display_calendar()
             elif username == st.secrets["USER_USERNAME"] and password == st.secrets["USER_PASSWORD"]:
                 st.session_state.user = "user"
