@@ -7,6 +7,8 @@ from streamlit_calendar import calendar
 import random
 from typing import List, Dict, Tuple, Optional
 import altair as alt
+import os
+import google.generativeai as genai
 
 #FIREBASE
 import firebase_admin
@@ -21,6 +23,14 @@ try:
 except KeyError:
     st.error("OPENAI_API_KEY is missing in the secrets configuration.")
     st.stop()
+
+try:
+    API = st.secrets['GENAI_API_KEY']
+    genai.configure(api_key=API)
+    # Create the model
+
+except KeyError:
+    st.error("GENAI_API_KEY is missing in the secrets configuration.")
 
 EVENT_KEY_MAPPING = {
     "vacation": "Ferie",
@@ -554,8 +564,65 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
             )
             return completion.choices[0].message.content
         except Exception as e:
-            st.error(f"Error getting AI response: {e}")
-            return "Der opstod en fejl ved behandling af din forespørgsel."
+            st.error(f"Error getting AI response: {e}, trying gemini-2.0-flash-exp")
+            generation_config = {
+                "temperature": 1,
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 8192,
+                "response_mime_type": "text/plain",
+            }
+            model = genai.GenerativeModel(
+                model_name="gemini-2.0-flash-exp",
+                generation_config=generation_config,
+            )
+            contentuere = [
+                    {
+                        "role": "system",
+                        "content": """Du er en specialiseret analyseekspert med fokus på fraværsmønstre i arbejdsmiljøer.
+
+Din primære opgave er at:
+1. Analysere medarbejderes fraværsdata for at identificere mønstre
+2. Vurdere om disse mønstre er statistisk signifikante
+3. Kategorisere mønstre i følgende typer:
+   - Tidsmæssige mønstre (bestemte ugedage, måneder, eller årstider)
+   - Længdemønstre (varighed af fravær)
+   - Frekvensbaserede mønstre (hyppighed af fravær)
+   - Kategorimønstre (typer af fravær)
+
+Format din analyse således:
+1. Identificerede mønstre
+2. Statistisk relevans
+3. Mulige årsagssammenhænge
+4. Anbefalinger (hvis relevant)
+
+Databasestruktur:
+- Hver post indeholder: navn, fraværstype, start- og slutdato
+- Fraværstyper inkluderer: Ferie, Sygdom, Barnsygdom, Kursus
+
+Vær objektiv og faktabaseret i din analyse, og undgå at drage forhastede konklusioner."""
+                },
+                {
+                    "role": "user",
+                    "content": f"""Analysér følgende fraværsdata:
+
+Forespørgsel: {content}
+Specifik data: {data}
+Komplet database: {database}
+
+Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Hvem? {content} "
+                                   f"Og her er dataene {data} i ugedagsformat. "
+                                   f"Her er hele databasen med datoerne {database}"
+                    }
+                ]
+
+            chat_session = model.start_chat()
+            response = chat_session.send_message(content, contentuere)
+            return response
 
     def main(self):
         st.title("Ferieplan")
