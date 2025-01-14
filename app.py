@@ -706,7 +706,6 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         password = st.text_input("Password", type="password")
         if st.button("Login"):
             if username in st.secrets["ADMIN_CREDENTIALS"] and password == st.secrets["ADMIN_CREDENTIALS"][username]:
-                controller.set('admin', 'login')
                 st.session_state.user = "admin"
                 st.success(f"Logged in as {username} (admin)")
                 self.display_calendar()
