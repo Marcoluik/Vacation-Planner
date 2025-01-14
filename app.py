@@ -14,7 +14,6 @@ import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, db
 import json
-from streamlit_cookies_controller import CookieController
 st.set_page_config(layout="wide", page_title="FeriePlan", page_icon=":calendar:")
 
 try:
@@ -50,7 +49,7 @@ DEFAULT_CALENDAR_OPTIONS = {
     "selectable": True
 }
 
-controller = CookieController()
+
 
 
 class FirebaseManager:
