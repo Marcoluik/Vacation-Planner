@@ -14,7 +14,7 @@ import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, db
 import json
-
+from streamlit_cookies_controller import CookieController
 st.set_page_config(layout="wide", page_title="FeriePlan", page_icon=":calendar:")
 
 try:
@@ -49,6 +49,9 @@ DEFAULT_CALENDAR_OPTIONS = {
     "navLinks": True,
     "selectable": True
 }
+
+controller = CookieController()
+
 
 class FirebaseManager:
     @staticmethod
@@ -314,6 +317,58 @@ class DatabaseManager:
         st.error(f"No user found with name {name}")
         return False
 
+    @staticmethod
+    def delete_event(name: str, event_type: str, start_date: str, end_date: str) -> bool:
+        """
+        Delete a specific event for a user from the Firebase database.
+
+        :param name: Name of the user
+        :param event_type: Type of event to delete (vacation, sick, child_sick, training)
+        :param start_date: Start date of the event to delete
+        :param end_date: End date of the event to delete
+        :return: True if deleted successfully, False otherwise
+        """
+        try:
+            ref = FirebaseManager.get_ref("/_default")
+            users = ref.get() or {}
+
+            # Find the user
+            user_key = None
+            user_data = None
+            for key, user in users.items():
+                if isinstance(user, dict) and user.get('name') == name:
+                    user_key = key
+                    user_data = user
+                    break
+
+            if not user_data:
+                st.error(f"Ingen bruger fundet med navnet {name}")
+                return False
+
+            # Get the event list for the specified type
+            event_list = user_data.get(event_type, [])
+            if not event_list:
+                st.error(f"Ingen {event_type} perioder fundet for {name}")
+                return False
+
+            # Find and remove the specific event
+            new_event_list = [
+                event for event in event_list
+                if event[0] != start_date or event[1] != end_date
+            ]
+
+            if len(new_event_list) == len(event_list):
+                st.error("Periode ikke fundet")
+                return False
+
+            # Update the database
+            ref.child(user_key).child(event_type).set(new_event_list)
+            return True
+
+        except Exception as e:
+            st.error(f"Fejl ved sletning af periode: {e}")
+            return False
+
 
 
 
@@ -517,7 +572,7 @@ class CalendarApp:
     def ask_assistant(self, content: str, database: List[Dict], data: Dict) -> str:
         try:
             completion = self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -633,9 +688,6 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
             self.login_page()
             return
 
-        if st.session_state.user == "admin":
-            self.setup_sidebar()
-
         page_choice = st.sidebar.selectbox("Vælg side", ["Kalender", "Statistik"])
         if page_choice == "Kalender":
             self.display_calendar()
@@ -643,12 +695,19 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
         else:
             self.secrets()
 
+        if st.session_state.user == "admin":
+            self.setup_sidebar()
+            self.setup_deletion_ui()
+
+
+
     def login_page(self):
         st.title("Login")
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         if st.button("Login"):
             if username in st.secrets["ADMIN_CREDENTIALS"] and password == st.secrets["ADMIN_CREDENTIALS"][username]:
+                controller.set('admin', 'login')
                 st.session_state.user = "admin"
                 st.success(f"Logged in as {username} (admin)")
                 self.display_calendar()
@@ -715,6 +774,74 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
                 DatabaseManager.add_or_update_user(
                     name, user_type, **{event_type: [(start, end)]}
                 )
+
+    def setup_deletion_ui(self):
+        """Add deletion UI to the sidebar"""
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Slet fraværsperiode")
+
+        # Get all users and their events
+        users = DatabaseManager.all()
+        if not users:
+            st.sidebar.warning("Ingen brugere fundet")
+            return
+
+        # Create selectbox for users
+        user_names = [user.get('name') for user in users if user.get('name')]
+        selected_user = st.sidebar.selectbox(
+            "Vælg medarbejder",
+            options=user_names,
+            key="delete_user_select"
+        )
+
+        if selected_user:
+            # Get user's events
+            user_events = []
+            for user in users:
+                if user.get('name') == selected_user:
+                    # Create a list of all events for this user
+                    for event_type, danish_name in EVENT_KEY_MAPPING.items():
+                        if event_type in user:
+                            for start, end in user[event_type]:
+                                user_events.append({
+                                    'type': danish_name,
+                                    'start': start,
+                                    'end': end,
+                                    'event_key': event_type
+                                })
+
+            if not user_events:
+                st.sidebar.info(f"Ingen fraværsperioder fundet for {selected_user}")
+                return
+
+            # Format events for display
+            event_options = [
+                f"{evt['type']}: {evt['start']} - {evt['end']}"
+                for evt in user_events
+            ]
+
+            selected_event_idx = st.sidebar.selectbox(
+                "Vælg fraværsperiode",
+                range(len(event_options)),
+                format_func=lambda x: event_options[x],
+                key="delete_event_select"
+            )
+
+            if st.sidebar.button("Slet fraværsperiode", type="primary"):
+                selected_event = user_events[selected_event_idx]
+                success = DatabaseManager.delete_event(
+                    name=selected_user,
+                    event_type=selected_event['event_key'],
+                    start_date=selected_event['start'],
+                    end_date=selected_event['end']
+                )
+
+                if success:
+                    # Clear calendar events cache to force reload
+                    if "calendar_events" in st.session_state:
+                        del st.session_state.calendar_events
+                    st.sidebar.success(f"Fraværsperiode slettet for {selected_user}")
+                    st.rerun()
     def secrets(self):
         # Get unique names and types
         names = [item.get('name') for item in DatabaseManager.all() if item.get('name')] + ["All"]
