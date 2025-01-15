@@ -553,6 +553,7 @@ class CalendarApp:
             "loading": False,
             "rerenderDelay": 0,
             "handleWindowResize": False,
+            "weekNumbers": True
         }
 
         # Add unique key based on current state
