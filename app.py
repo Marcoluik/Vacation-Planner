@@ -531,7 +531,7 @@ class CalendarApp:
         print(f"Session state keys: {st.session_state.keys()}")
         print(f"User override: {user_override}")
         print(f"Types: {types}")
-        
+
         # Initialize calendar_events if not present
         if "calendar_events" not in st.session_state:
             print(">>> Loading events (not in session state)")
@@ -544,27 +544,51 @@ class CalendarApp:
         else:
             print(">>> Using cached events from session state")
             events = st.session_state.calendar_events
-        
+
         print(">>> Rendering calendar...")
-        mode = "daygrid"
-        
+
+        # Create a callback for the selectbox
+        def on_view_change():
+            st.session_state.calendar_key = f"calendar_{id(events)}_{st.session_state.selected_view}"
+
+        # Initialize the calendar key if not present
+        if 'calendar_key' not in st.session_state:
+            st.session_state.calendar_key = f"calendar_{id(events)}_initial"
+
+        # Create the selectbox with the callback
+        selected_view = st.selectbox(
+            "Vælg visning",
+            list(self.calendar_modes.keys()),
+            key="selected_view",
+            on_change=on_view_change
+        )
+
+        # Get the calendar mode configuration
+        mode = self.calendar_modes[selected_view]
+        initial_view = mode["initialView"]
+        header_toolbar = mode["headerToolbar"]
+        views = mode["views"]
+
+        # Set up calendar options
         calendar_options = {
             **DEFAULT_CALENDAR_OPTIONS,
             "loading": False,
             "rerenderDelay": 0,
             "handleWindowResize": False,
-            "weekNumbers": True
+            "weekNumbers": True,
+            "initialView": initial_view,
+            "headerToolbar": header_toolbar,
+            "views": views,
         }
 
-        # Add unique key based on current state
-        calendar_key = f"calendar_{id(events)}"
-        print(f">>> Using calendar key: {calendar_key}")
-
+        print(f">>> Using calendar key: {st.session_state.calendar_key}")
         print(f">>> About to render calendar with {len(events)} events")
+
+        # Render the calendar with the dynamic key
         state = calendar(
-            events=events,  # Use local events variable instead of directly accessing session state
+            events=events,
             options=calendar_options,
-            key=calendar_key
+            key=st.session_state.calendar_key
         )
         print(">>> Calendar rendered")
         print("=== display_calendar complete ===\n")
