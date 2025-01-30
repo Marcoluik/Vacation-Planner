@@ -579,6 +579,9 @@ class CalendarApp:
             "initialView": initial_view,
             "headerToolbar": header_toolbar,
             "views": views,
+            "firstDay": 1,
+            "locale": "da",
+
         }
 
         print(f">>> Using calendar key: {st.session_state.calendar_key}")
@@ -909,18 +912,47 @@ Identificér eventuelle mønstre og vurdér deres statistiske signifikans."""
             for type_ in chosen_types:
                 events.extend(DatabaseManager.load_events(selected_user_type=type_))
 
+        def on_view_change():
+            # Update the calendar key when the view changes
+            st.session_state.calendar_key = f"calendar_{id(events)}_{st.session_state.selected_view}"
+
         if view_mode == "Kalender":
+            # Initialize the calendar key if not present
+            if 'calendar_key' not in st.session_state:
+                st.session_state.calendar_key = f"calendar_{id(events)}_initial"
+
+            # Create the selectbox with the callback
+            selected_view = st.selectbox(
+                "Vælg visning",
+                list(self.calendar_modes.keys()),
+                key="selected_view",
+                on_change=on_view_change
+            )
+
+            # Get the calendar mode configuration
+            mode = self.calendar_modes[selected_view]
+            initial_view = mode["initialView"]
+            header_toolbar = mode["headerToolbar"]
+            views = mode["views"]
+
             # Use the same calendar display logic as the sidebar
             calendar_options = {
                 **DEFAULT_CALENDAR_OPTIONS,
                 "loading": False,
                 "rerenderDelay": 0,
                 "handleWindowResize": False,
+                "weekNumbers": True,
+                "initialView": initial_view,
+                "headerToolbar": header_toolbar,
+                "views": views,
+                "firstDay": 1,
+                "locale": "da",
             }
 
-            # Force calendar rerender with unique key based on selection
-            calendar_key = f"calendar_{'-'.join(chosen) if chosen else '-'.join(chosen_types) if chosen_types else 'all'}"
-            
+            # Force calendar rerender with unique key based on selection and view
+            calendar_key = f"calendar_{'-'.join(chosen) if chosen else '-'.join(chosen_types) if chosen_types else 'all'}_{selected_view}"
+
+
             # Display calendar with current events
             state = calendar(
                 events=events,
