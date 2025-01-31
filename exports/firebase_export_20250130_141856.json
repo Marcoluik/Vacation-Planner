@@ -7,7 +7,7 @@
           "2024-02-08"
         ]
       ],
-      "color": "#0957f4",
+      "color": "#336600",
       "name": "John",
       "training": [
         [
@@ -18,16 +18,16 @@
       "type": "Byggeleder",
       "vacation": [
         [
-          "2024-03-21",
-          "2024-03-22"
-        ],
-        [
           "2024-08-05",
           "2024-08-20"
         ],
         [
           "2024-08-21",
           "2024-08-23"
+        ],
+        [
+          "2024-03-21",
+          "2024-03-22"
         ]
       ]
     },
@@ -197,7 +197,7 @@
     },
     "-ODpgTkGZdF6FusSzn9V": {
       "color": "#0957f4",
-      "name": "Søren",
+      "name": "S\u00f8ren",
       "type": "Byggeleder",
       "vacation": [
         [
@@ -294,7 +294,7 @@
         ]
       ],
       "color": "#e9ad4c",
-      "name": "Kim Øster Jørgensen",
+      "name": "Kim \u00d8ster J\u00f8rgensen",
       "sick": [
         [
           "2024-02-16",
@@ -427,7 +427,7 @@
           "2024-10-28"
         ]
       ],
-      "type": "Tømrer",
+      "type": "T\u00f8mrer",
       "vacation": [
         [
           "2024-07-11",
@@ -474,7 +474,7 @@
           "2024-10-23"
         ]
       ],
-      "type": "Tømrer",
+      "type": "T\u00f8mrer",
       "vacation": [
         [
           "2024-04-21",
@@ -491,7 +491,7 @@
       ]
     },
     "-ODpjvpCIWVPjzQv1dLE": {
-      "color": "#0957f4",
+      "color": "#336600",
       "maternity": [
         [
           "2024-05-27",
@@ -499,12 +499,32 @@
         ]
       ],
       "name": "Nicklas",
-      "type": "Byggeleder"
+      "type": "Byggeleder",
+      "vacation": [
+        [
+          "2025-01-02",
+          "2025-01-03"
+        ]
+      ]
     },
     "-ODpk-JtqFo6_yYDyXwa": {
       "color": "#d0281f",
       "name": "Grith",
-      "type": "Kontor"
+      "type": "Kontor",
+      "vacation": [
+        [
+          "2025-04-14",
+          "2025-04-16"
+        ],
+        [
+          "2025-06-10",
+          "2025-06-12"
+        ],
+        [
+          "2025-08-04",
+          "2025-08-08"
+        ]
+      ]
     },
     "-ODpya_kctTgUSM5qWOv": {
       "child_sick": [
@@ -529,7 +549,7 @@
           "2024-10-08"
         ]
       ],
-      "type": "Tømrer",
+      "type": "T\u00f8mrer",
       "vacation": [
         [
           "2024-07-22",
@@ -569,6 +589,10 @@
         [
           "2024-11-14",
           "2024-11-18"
+        ],
+        [
+          "2025-01-13",
+          "2025-01-24"
         ]
       ]
     },
@@ -599,7 +623,13 @@
           "2024-11-26"
         ]
       ],
-      "type": "Kontor"
+      "type": "Kontor",
+      "vacation": [
+        [
+          "2025-02-09",
+          "2025-02-14"
+        ]
+      ]
     },
     "-ODq8pMoDASz-KI4sXVf": {
       "color": "#40e7c6",
@@ -614,7 +644,13 @@
           "2024-11-27"
         ]
       ],
-      "type": "Arbejdsmand"
+      "type": "Arbejdsmand",
+      "vacation": [
+        [
+          "2025-02-10",
+          "2025-02-14"
+        ]
+      ]
     },
     "-ODqBFZu8ySOjAeFknjM": {
       "color": "#89b76c",
@@ -625,17 +661,108 @@
           "2024-12-03"
         ]
       ],
-      "type": "Tømrer"
+      "type": "T\u00f8mrer"
+    },
+    "-OGnjX99azINhOk9FsdW": {
+      "color": "#d8a54c",
+      "name": "Jakob",
+      "type": "Driftchef",
+      "vacation": [
+        [
+          "2025-02-12",
+          "2025-02-14"
+        ],
+        [
+          "2025-03-28",
+          "2025-03-28"
+        ]
+      ]
+    },
+    "-OGnk3etsIEhR4fL8T5t": {
+      "color": "#66c935",
+      "name": "Helle",
+      "type": "Regnskab",
+      "vacation": [
+        [
+          "2025-02-24",
+          "2025-02-28"
+        ],
+        [
+          "2025-05-12",
+          "2025-05-16"
+        ],
+        [
+          "2025-04-14",
+          "2025-04-16"
+        ],
+        [
+          "2025-06-30",
+          "2025-07-04"
+        ],
+        [
+          "2025-07-28",
+          "2025-08-01"
+        ],
+        [
+          "2025-06-06",
+          "2025-06-06"
+        ]
+      ]
+    },
+    "-OGnlUrnAViOYHdcadxF": {
+      "color": "#336600",
+      "name": "Jannick",
+      "type": "Byggeleder",
+      "vacation": [
+        [
+          "2025-01-06",
+          "2025-01-14"
+        ]
+      ]
+    },
+    "-OGnlpj3GxWK-GW42tm5": {
+      "color": "#e7c643",
+      "name": "Marianne",
+      "type": "Administrationschef",
+      "vacation": [
+        [
+          "2025-02-03",
+          "2025-02-07"
+        ],
+        [
+          "2025-04-14",
+          "2025-04-16"
+        ],
+        [
+          "2025-06-10",
+          "2025-06-10"
+        ]
+      ]
+    },
+    "-OHqLc8AVaDaqSMbsu1B": {
+      "color": "#a63d00",
+      "name": "Julius",
+      "type": "L\u00e6rling",
+      "vacation": [
+        [
+          "2025-03-20",
+          "2025-03-25"
+        ]
+      ]
     }
   },
   "colors": {
+    "Administrationschef": "#e7c643",
     "Arbejdsmand": "#40e7c6",
     "Byggeleder": "#336600",
+    "Driftchef": "#d8a54c",
     "Elektrikker": "#87afb7",
     "Kontor": "#d0281f",
+    "L\u00e6rling": "#a63d00",
     "Maler": "#58dc96",
     "Nedriver": "#e9ad4c",
+    "Regnskab": "#66c935",
     "Snedker": "#074bd8",
-    "Tømrer": "#89b76c"
+    "T\u00f8mrer": "#89b76c"
   }
 }
