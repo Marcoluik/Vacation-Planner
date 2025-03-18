@@ -447,6 +447,7 @@ class EventManager:
 
         #print(f"Generated FullCalendar events: {fullcalendar_events}")
         return fullcalendar_events
+
 class CalendarApp:
     def __init__(self):
         self.client = OpenAI(api_key=OPENAI_API_KEY)
@@ -547,52 +548,69 @@ class CalendarApp:
 
         print(">>> Rendering calendar...")
 
-        # Create a callback for the selectbox
-        def on_view_change():
-            st.session_state.calendar_key = f"calendar_{id(events)}_{st.session_state.selected_view}"
+        # Add a toggle for switching between calendar and employee-week timeline views
+        view_type = st.radio("Vælg visning", ["Kalender", "Tidslinje (Medarbejdere × Uger)"], horizontal=True, key="main_view_choice")
+        
+        if view_type == "Tidslinje (Medarbejdere × Uger)":
+            # Get start and end dates for the timeline
+            today = datetime.now()
+            default_start = today - timedelta(days=60)  # Default to showing ~2 months of data
+            
+            date_col1, date_col2 = st.columns(2)
+            with date_col1:
+                start_date = st.date_input("Fra dato", value=default_start, key="timeline_start_date")
+            with date_col2:
+                end_date = st.date_input("Til dato", value=today, key="timeline_end_date")
+                
+            # Display the employee-week timeline
+            display_employee_week_timeline(events, start_date, end_date)
+        else:
+            # Create a callback for the selectbox
+            def on_view_change():
+                st.session_state.calendar_key = f"calendar_{id(events)}_{st.session_state.selected_view}"
 
-        # Initialize the calendar key if not present
-        if 'calendar_key' not in st.session_state:
-            st.session_state.calendar_key = f"calendar_{id(events)}_initial"
+            # Initialize the calendar key if not present
+            if 'calendar_key' not in st.session_state:
+                st.session_state.calendar_key = f"calendar_{id(events)}_initial"
 
-        # Create the selectbox with the callback
-        selected_view = st.selectbox(
-            "Vælg visning",
-            list(self.calendar_modes.keys()),
-            key="selected_view",
-            on_change=on_view_change
-        )
+            # Create the selectbox with the callback
+            selected_view = st.selectbox(
+                "Vælg kalendervisning",
+                list(self.calendar_modes.keys()),
+                key="selected_view",
+                on_change=on_view_change
+            )
 
-        # Get the calendar mode configuration
-        mode = self.calendar_modes[selected_view]
-        initial_view = mode["initialView"]
-        header_toolbar = mode["headerToolbar"]
-        views = mode["views"]
+            # Get the calendar mode configuration
+            mode = self.calendar_modes[selected_view]
+            initial_view = mode["initialView"]
+            header_toolbar = mode["headerToolbar"]
+            views = mode["views"]
 
-        # Set up calendar options
-        calendar_options = {
-            **DEFAULT_CALENDAR_OPTIONS,
-            "loading": False,
-            "rerenderDelay": 0,
-            "handleWindowResize": False,
-            "weekNumbers": True,
-            "initialView": initial_view,
-            "headerToolbar": header_toolbar,
-            "views": views,
-            "firstDay": 1,
-            "locale": "da",
+            # Set up calendar options
+            calendar_options = {
+                **DEFAULT_CALENDAR_OPTIONS,
+                "loading": False,
+                "rerenderDelay": 0,
+                "handleWindowResize": False,
+                "weekNumbers": True,
+                "initialView": initial_view,
+                "headerToolbar": header_toolbar,
+                "views": views,
+                "firstDay": 1,
+                "locale": "da",
+            }
 
-        }
+            print(f">>> Using calendar key: {st.session_state.calendar_key}")
+            print(f">>> About to render calendar with {len(events)} events")
 
-        print(f">>> Using calendar key: {st.session_state.calendar_key}")
-        print(f">>> About to render calendar with {len(events)} events")
+            # Render the calendar with the dynamic key
+            state = calendar(
+                events=events,
+                options=calendar_options,
+                key=st.session_state.calendar_key
+            )
 
-        # Render the calendar with the dynamic key
-        state = calendar(
-            events=events,
-            options=calendar_options,
-            key=st.session_state.calendar_key
-        )
         print(">>> Calendar rendered")
         print("=== display_calendar complete ===\n")
 
@@ -1074,6 +1092,9 @@ def display_statistics(events):
             key="stats_end_date"
         )
 
+    # Add visualization selection
+    viz_type = st.radio("Visualiseringstype", ["Standard", "Tidslinje (Medarbejdere x Uger)"], horizontal=True)
+
     if events:
         # Filter events based on selected date range
         filtered_events = []
@@ -1085,80 +1106,259 @@ def display_statistics(events):
             if (event_start <= end_date and event_end >= start_date):
                 filtered_events.append(event)
 
-        # Calculate statistics with filtered events
-        df = calculate_statistics(filtered_events)
-        
-        if not df.empty:
-            # Create visualizations with filtered data
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                # Day of Week Chart
-                day_chart = alt.Chart(df).mark_bar().encode(
-                    x=alt.X('Day:N', sort=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
-                    y='sum(Count):Q',
-                    color='Category:N',
-                    tooltip=['Day:N', 'Category:N', 'Count:Q']
-                ).properties(
-                    title='Daglig fordeling',
-                    height=300
-                )
-                st.altair_chart(day_chart, use_container_width=True)
-
-            with col2:
-                # Category Chart
-                category_chart = alt.Chart(df).mark_bar().encode(
-                    x='Category:N',
-                    y='sum(Count):Q',
-                    color='Category:N',
-                    tooltip=['Category:N', 'Count:Q']
-                ).properties(
-                    title='Fraværstyper',
-                    height=300
-                )
-                st.altair_chart(category_chart, use_container_width=True)
-
-            with col3:
-                # Heatmap
-                heatmap = alt.Chart(df).mark_rect().encode(
-                    x=alt.X('Day:N', sort=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
-                    y=alt.Y('Category:N', title='Kategori'),
-                    color=alt.Color('sum(Count):Q',
-                                    scale=alt.Scale(scheme='viridis'),
-                                    title='Antal dage'),
-                    tooltip=[
-                        alt.Tooltip('Day:N'),
-                        alt.Tooltip('Category:N'),
-                        alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
-                    ]
-                ).properties(
-                    title='Fravær Heatmap',
-                    height=300
-                )
-                st.altair_chart(heatmap, use_container_width=True)
-
-            # Calculate and display metrics
-            total_days = int(df['Count'].sum())
-            avg_per_category = round(df.groupby('Category')['Count'].sum().mean(), 1)
-            day_sums = df.groupby('Day')['Count'].sum()
-            most_common_day = day_sums.index[day_sums.values.argmax()] if not day_sums.empty else "N/A"
-
-            # Display metrics
-            metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-            with metrics_col1:
-                st.metric("Total fravær dage", total_days)
-            with metrics_col2:
-                st.metric("Gennemsnit per kategori", avg_per_category)
-            with metrics_col3:
-                st.metric("Mest sete dag", most_common_day)
-
-            # Debug: Display raw data
-            if st.checkbox("Vis rådata"):
-                st.write(df)
+        if viz_type == "Tidslinje (Medarbejdere x Uger)":
+            display_employee_week_timeline(filtered_events, start_date, end_date)
         else:
-            st.warning("Ingen data fundet for den valgte periode")
+            # Calculate statistics with filtered events
+            df = calculate_statistics(filtered_events)
+            
+            if not df.empty:
+                # Create visualizations with filtered data
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    # Day of Week Chart
+                    day_chart = alt.Chart(df).mark_bar().encode(
+                        x=alt.X('Day:N', sort=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
+                        y='sum(Count):Q',
+                        color='Category:N',
+                        tooltip=['Day:N', 'Category:N', 'Count:Q']
+                    ).properties(
+                        title='Daglig fordeling',
+                        height=300
+                    )
+                    st.altair_chart(day_chart, use_container_width=True)
+
+                with col2:
+                    # Category Chart
+                    category_chart = alt.Chart(df).mark_bar().encode(
+                        x='Category:N',
+                        y='sum(Count):Q',
+                        color='Category:N',
+                        tooltip=['Category:N', 'Count:Q']
+                    ).properties(
+                        title='Fraværstyper',
+                        height=300
+                    )
+                    st.altair_chart(category_chart, use_container_width=True)
+
+                with col3:
+                    # Heatmap
+                    heatmap = alt.Chart(df).mark_rect().encode(
+                        x=alt.X('Day:N', sort=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
+                        y=alt.Y('Category:N', title='Kategori'),
+                        color=alt.Color('sum(Count):Q',
+                                        scale=alt.Scale(scheme='viridis'),
+                                        title='Antal dage'),
+                        tooltip=[
+                            alt.Tooltip('Day:N'),
+                            alt.Tooltip('Category:N'),
+                            alt.Tooltip('sum(Count):Q', title='Days', format='.0f')
+                        ]
+                    ).properties(
+                        title='Fravær Heatmap',
+                        height=300
+                    )
+                    st.altair_chart(heatmap, use_container_width=True)
+
+                # Calculate and display metrics
+                total_days = int(df['Count'].sum())
+                avg_per_category = round(df.groupby('Category')['Count'].sum().mean(), 1)
+                day_sums = df.groupby('Day')['Count'].sum()
+                most_common_day = day_sums.index[day_sums.values.argmax()] if not day_sums.empty else "N/A"
+
+                # Display metrics
+                metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+                with metrics_col1:
+                    st.metric("Total fravær dage", total_days)
+                with metrics_col2:
+                    st.metric("Gennemsnit per kategori", avg_per_category)
+                with metrics_col3:
+                    st.metric("Mest sete dag", most_common_day)
+
+                # Debug: Display raw data
+                if st.checkbox("Vis rådata"):
+                    st.write(df)
+            else:
+                st.warning("Ingen data fundet for den valgte periode")
     else:
         st.warning("Ingen fraværsdata tilgængelig")
+
+def display_employee_week_timeline(events, start_date, end_date):
+    """Display a timeline where employees are on y-axis and weeks are on x-axis."""
+    if not events:
+        st.warning("Ingen data tilgængelig for visualisering")
+        return
+    
+    # Extract all unique employees from events
+    employees = set()
+    for event in events:
+        # Extract employee name from title (format: "Name - Category")
+        employee_name = event['title'].split(' - ')[0].strip()
+        employees.add(employee_name)
+    
+    # Sort employees alphabetically
+    employees = sorted(list(employees))
+    
+    # Determine the date range and corresponding weeks
+    if isinstance(start_date, datetime):
+        start_date = start_date.date()
+    if isinstance(end_date, datetime):
+        end_date = end_date.date()
+    
+    # Calculate the starting and ending weeks
+    start_week = start_date.isocalendar()[1]
+    start_year = start_date.year
+    end_week = end_date.isocalendar()[1]
+    end_year = end_date.year
+    
+    # Create a list of weeks to display
+    weeks = []
+    current_date = start_date
+    while current_date <= end_date:
+        year, week, _ = current_date.isocalendar()
+        # Use a simplified week format for display but keep the full format as a sorting key
+        week_label = f"W{week:02d}"
+        iso_week = f"{year}-W{week:02d}"
+        if iso_week not in [w.get('iso_week') for w in weeks]:
+            weeks.append({'week': week_label, 'iso_week': iso_week, 'start': current_date})
+        current_date += timedelta(days=1)
+    
+    # Sort weeks by ISO week value
+    weeks.sort(key=lambda x: x['iso_week'])
+    
+    # Prepare data for the chart
+    timeline_data = []
+    
+    for event in events:
+        event_start = datetime.strptime(event['start'], '%Y-%m-%d').date()
+        event_end = datetime.strptime(event['end'], '%Y-%m-%d').date()
+        
+        # Skip events outside the selected date range
+        if event_end < start_date or event_start > end_date:
+            continue
+        
+        # Get employee name and category
+        title_parts = event['title'].split(' - ')
+        employee_name = title_parts[0].strip()
+        category = title_parts[1].strip() if len(title_parts) > 1 else "Unknown"
+        
+        # Calculate all days in this event
+        current_date = max(event_start, start_date)
+        event_end_date = min(event_end, end_date)
+        
+        while current_date <= event_end_date:
+            year, week, _ = current_date.isocalendar()
+            # Use simplified week format for display
+            week_label = f"W{week:02d}"
+            
+            timeline_data.append({
+                'Employee': employee_name,
+                'Week': week_label,
+                'Category': category,
+                'event_start': event_start.isoformat(),
+                'event_end': event_end.isoformat(),
+                'Count': 1  # Each day counts as 1
+            })
+            
+            current_date += timedelta(days=1)
+    
+    if not timeline_data:
+        st.warning("Ingen data fundet i den valgte periode")
+        return
+    
+    # Create DataFrame
+    df = pd.DataFrame(timeline_data)
+    
+    # Aggregate by employee, week, and category
+    df_agg = df.groupby(['Employee', 'Week', 'Category']).size().reset_index(name='Days')
+    
+    # Create the chart using Altair
+    # Configure color scale - use a lighter color palette that works better with text
+    color_scale = alt.Scale(
+        domain=list(set(df_agg['Category'])),
+        range=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
+    )
+    
+    # Create a selection for highlighting
+    hover = alt.selection_point(
+        fields=['Employee', 'Week'],
+        on='mouseover',
+        nearest=True,
+        empty=False
+    )
+    
+    # Create the base chart
+    base = alt.Chart(df_agg).encode(
+        x=alt.X('Week:N', title='Uge', sort=[w['week'] for w in weeks], axis=alt.Axis(orient='top')),
+        y=alt.Y('Employee:N', title='Medarbejder', sort=employees),
+        tooltip=[
+            alt.Tooltip('Employee', title='Medarbejder'),
+            alt.Tooltip('Week', title='Uge'),
+            alt.Tooltip('Category', title='Kategori'),
+            alt.Tooltip('Days', title='Dage')
+        ]
+    )
+    
+    # Create the heatmap with a modified color scheme
+    heatmap = base.mark_rect().encode(
+        color=alt.Color('Days:Q', 
+                       scale=alt.Scale(scheme='viridis', domain=[0, 5]), 
+                       legend=alt.Legend(title='Antal dage'))
+    )
+    
+    # Add a white outline to the text to make it visible on any background
+    # First create a background outline layer
+    text_outline = base.mark_text(
+        baseline='middle', 
+        fontSize=10,
+        font='Arial',
+        fontWeight='bold',
+        stroke='black',
+        strokeWidth=1
+    ).encode(
+        text=alt.Text('Category:N'),
+        color=alt.value('black'),
+        opacity=alt.condition(
+            alt.datum.Days > 0,  # Show text for all cells with at least 1 day
+            alt.value(1),
+            alt.value(0)
+        )
+    )
+    
+    # Then add the actual text in white on top
+    text = base.mark_text(
+        baseline='middle', 
+        fontSize=10,
+        font='Arial',
+        fontWeight='bold'
+    ).encode(
+        text=alt.Text('Category:N'),
+        color=alt.value('white'),
+        opacity=alt.condition(
+            alt.datum.Days > 0,  # Show text for all cells with at least 1 day
+            alt.value(1),
+            alt.value(0)
+        )
+    )
+    
+    # Combine the layers - order matters: heatmap first, then text outline, then text
+    chart = (heatmap + text_outline + text).properties(
+        title='Medarbejdere × Uger Tidslinje',
+        width=len(weeks) * 30,  # Adjust width based on number of weeks
+        height=len(employees) * 30  # Adjust height based on number of employees
+    ).configure_axis(
+        labelAngle=0
+    ).configure_view(
+        strokeWidth=0  # Remove the border
+    )
+    
+    # Display the chart with scrolling if needed
+    st.altair_chart(chart, use_container_width=True)
+    
+    # Add option to see the data
+    if st.checkbox("Vis tidslinje data"):
+        st.write(df_agg)
 
 def create_leave_dashboard(events):
     """Create an interactive leave statistics dashboard using Altair."""
